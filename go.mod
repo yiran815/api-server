@@ -28,6 +28,7 @@ require (
 	golang.org/x/oauth2 v0.27.0
 	gorm.io/driver/mysql v1.6.0
 	gorm.io/gorm v1.30.0
+	resty.dev/v3 v3.0.0-beta.4
 )
 
 require (
