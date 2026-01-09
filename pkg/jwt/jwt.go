@@ -15,12 +15,13 @@ type JwtInterface interface {
 	GenerateToken(id int64, userName string) (token string, err error)
 	ParseToken(tokenString string) (jwtClaims *JwtClaims, err error)
 	GetUser(ctx context.Context) (*JwtClaims, error)
+	GetExpire() time.Duration
 }
 
 type GenerateToken struct {
 	secret string
-	expire time.Duration
 	issuer string
+	expire time.Duration
 }
 
 func NewGenerateToken() (*GenerateToken, error) {
@@ -101,4 +102,8 @@ func (j *GenerateToken) GetUser(ctx context.Context) (*JwtClaims, error) {
 		return nil, errors.New("get jwt claims by type not match")
 	}
 	return jwtClaims, nil
+}
+
+func (j *GenerateToken) GetExpire() (expire time.Duration) {
+	return j.expire
 }

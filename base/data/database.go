@@ -5,6 +5,7 @@ import (
 
 	"github.com/spf13/viper"
 	"github.com/yiran15/api-server/base/conf"
+	"github.com/yiran15/api-server/stores"
 	"go.uber.org/zap"
 	"gorm.io/driver/mysql"
 	"gorm.io/gorm"
@@ -81,5 +82,6 @@ func NewDB() (*gorm.DB, func(), error) {
 	sqlDB.SetConnMaxLifetime(conf.GetMysqlMaxLifetime())
 
 	zap.S().Info("db connect success")
+	stores.SetDefault(dbInstance)
 	return dbInstance, func() { _ = sqlDB.Close() }, nil
 }

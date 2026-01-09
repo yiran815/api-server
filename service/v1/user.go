@@ -17,6 +17,7 @@ import (
 	localcache "github.com/yiran15/api-server/pkg/local_cache"
 	"github.com/yiran15/api-server/pkg/oauth"
 	"github.com/yiran15/api-server/store"
+	"github.com/yiran15/api-server/stores"
 	"go.uber.org/zap"
 	"golang.org/x/crypto/bcrypt"
 	"gorm.io/gorm"
@@ -50,10 +51,10 @@ type UserService struct {
 	userStore       store.UserStorer
 	roleStore       store.RoleStorer
 	cacheStore      store.CacheStorer
+	feishuUserStore store.FeiShuUserStorer
 	tx              store.TxManagerInterface
 	jwt             jwt.JwtInterface
 	oauth           *oauth.OAuth2
-	feishuUserStore store.FeiShuUserStorer
 	localCache      localcache.Cacher
 }
 
@@ -70,36 +71,42 @@ func NewUserService(userStore store.UserStorer, roleStore store.RoleStorer, cach
 	}
 }
 
-func (receiver *UserService) Login(ctx context.Context, req *apitypes.UserLoginRequest) (*apitypes.UserLoginResponse, error) {
-	user, err := receiver.userStore.Query(ctx, store.Where("email", req.Email), store.Where("status", 1), store.Preload(model.PreloadRoles))
+func (self *UserService) Login(ctx context.Context, req *apitypes.UserLoginRequest) (*apitypes.UserLoginResponse, error) {
+	u := stores.User
+	user, err := u.WithContext(ctx).Where(u.Email.Eq(req.Email), u.Status.Eq(1)).Preload(u.Roles).First()
 	if err != nil {
 		if !errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, err
 		}
-		log.WithRequestID(ctx).Error("login failed, user not found", zap.String("email", req.Email))
+		log.WithRequestID(ctx).
+			Error("login failed", zap.String("email", req.Email), zap.Error(constant.ErrUserNotFound))
 		return nil, constant.ErrLoginFailed
 	}
 
-	if !receiver.checkPasswordHash(req.Password, user.Password) {
-		log.WithRequestID(ctx).Error("login failed, invalid password", zap.String("email", req.Email))
+	if !self.checkPasswordHash(req.Password, user.Password) {
+		log.WithRequestID(ctx).
+			Error("login failed", zap.String("email", req.Email), zap.Error(constant.ErrPasswordWrong))
 		return nil, constant.ErrLoginFailed
 	}
-	token, err := receiver.jwt.GenerateToken(user.ID, user.Name)
+	token, err := self.jwt.GenerateToken(user.ID, user.Name)
 	if err != nil {
 		return nil, err
 	}
 
+	tokenExpire := self.jwt.GetExpire()
 	if len(user.Roles) == 0 {
-		if err := receiver.cacheStore.SetSet(ctx, store.RoleType, user.ID, []any{constant.EmptyRoleSentinel}, nil); err != nil {
-			log.WithRequestID(ctx).Error("login set empty role cache error", zap.Int64("userID", user.ID), zap.Error(err))
+		if err := self.cacheStore.SetSet(ctx, store.RoleType, user.ID, []any{constant.EmptyRoleSentinel}, &tokenExpire); err != nil {
+			log.WithRequestID(ctx).
+				Error("login set empty role cache error", zap.Int64("userID", user.ID), zap.Error(err))
 		}
 	} else {
 		roleNames := make([]any, 0, len(user.Roles))
 		for _, role := range user.Roles {
 			roleNames = append(roleNames, role.Name)
 		}
-		if err := receiver.cacheStore.SetSet(ctx, store.RoleType, user.ID, roleNames, nil); err != nil {
-			log.WithRequestID(ctx).Error("login set role cache error", zap.Int64("userID", user.ID), zap.Any("roles", roleNames), zap.Error(err))
+		if err := self.cacheStore.SetSet(ctx, store.RoleType, user.ID, roleNames, &tokenExpire); err != nil {
+			log.WithRequestID(ctx).
+				Error("login set role cache error", zap.Int64("userID", user.ID), zap.Any("roles", roleNames), zap.Error(err))
 		}
 	}
 
@@ -109,16 +116,18 @@ func (receiver *UserService) Login(ctx context.Context, req *apitypes.UserLoginR
 	}, nil
 }
 
-func (receiver *UserService) Logout(ctx context.Context) error {
-	mc, err := receiver.jwt.GetUser(ctx)
+func (self *UserService) Logout(ctx context.Context) error {
+	mc, err := self.jwt.GetUser(ctx)
 	if err != nil {
 		return err
 	}
-	return receiver.cacheStore.DelKey(ctx, store.RoleType, mc.UserID)
+	return self.cacheStore.DelKey(ctx, store.RoleType, mc.UserID)
 }
 
-func (receiver *UserService) CreateUser(ctx context.Context, req *apitypes.UserCreateRequest) error {
+func (self *UserService) CreateUser(ctx context.Context, req *apitypes.UserCreateRequest) error {
 	var (
+		u     = stores.User
+		r     = stores.Role
 		user  *model.User
 		err   error
 		total int64
@@ -129,7 +138,7 @@ func (receiver *UserService) CreateUser(ctx context.Context, req *apitypes.UserC
 		*req.RolesID = helper.RemoveDuplicates(*req.RolesID)
 	}
 
-	if user, err = receiver.userStore.Query(ctx, store.Where("email", req.Email), store.Where("status", 1)); err != nil {
+	if user, err = u.WithContext(ctx).Where(u.Email.Eq(req.Email), u.Status.Eq(1)).First(); err != nil {
 		if !errors.Is(err, gorm.ErrRecordNotFound) {
 			return err
 		}
@@ -139,14 +148,16 @@ func (receiver *UserService) CreateUser(ctx context.Context, req *apitypes.UserC
 		return fmt.Errorf("user %s already exists", req.Name)
 	}
 
-	hashedPassword, err := receiver.hashPassword(req.Password)
+	hashedPassword, err := self.hashPassword(req.Password)
 	if err != nil {
 		return err
 	}
 
 	if req.RolesID != nil {
-		total, roles, err = receiver.roleStore.List(ctx, 0, 0, "", "", store.In("id", *req.RolesID))
-		if err != nil {
+		if total, err = r.WithContext(ctx).Where(r.ID.In(*req.RolesID...)).Count(); err != nil {
+			return err
+		}
+		if roles, err = r.WithContext(ctx).Where(r.ID.In(*req.RolesID...)).Find(); err != nil {
 			return err
 		}
 		if err = helper.ValidateRoleIds(*req.RolesID, roles, total); err != nil {
@@ -161,23 +172,14 @@ func (receiver *UserService) CreateUser(ctx context.Context, req *apitypes.UserC
 		Password: hashedPassword,
 		Avatar:   req.Avatar,
 		Mobile:   req.Mobile,
+		Roles:    roles,
 	}
 
-	return receiver.tx.Transaction(ctx, func(ctx context.Context) error {
-		if err = receiver.userStore.Create(ctx, user); err != nil {
-			return err
-		}
-
-		if req.RolesID == nil {
-			return nil
-		}
-
-		return receiver.userStore.AppendAssociation(ctx, user, model.PreloadRoles, roles)
-	})
+	return u.WithContext(ctx).Create(user)
 }
 
-func (receiver *UserService) UpdateUserByAdmin(ctx context.Context, req *apitypes.UserUpdateAdminRequest) error {
-	if err := receiver.updateUser(ctx, nil, req); err != nil {
+func (self *UserService) UpdateUserByAdmin(ctx context.Context, req *apitypes.UserUpdateAdminRequest) error {
+	if err := self.updateUser(ctx, nil, req); err != nil {
 		return err
 	}
 
@@ -185,63 +187,63 @@ func (receiver *UserService) UpdateUserByAdmin(ctx context.Context, req *apitype
 		return nil
 	}
 
-	return receiver.updateRole(ctx, &apitypes.UserUpdateRoleRequest{
+	return self.updateRole(ctx, &apitypes.UserUpdateRoleRequest{
 		ID:      req.ID,
 		RolesID: *req.RolesID,
 	})
 }
 
-func (receiver *UserService) UpdateUserBySelf(ctx context.Context, req *apitypes.UserUpdateSelfRequest) error {
-	mc, err := receiver.jwt.GetUser(ctx)
+func (self *UserService) UpdateUserBySelf(ctx context.Context, req *apitypes.UserUpdateSelfRequest) error {
+	mc, err := self.jwt.GetUser(ctx)
 	if err != nil {
 		return err
 	}
-	user, err := receiver.userStore.Query(ctx, store.Where("id", mc.UserID))
+	user, err := self.userStore.Query(ctx, store.Where("id", mc.UserID))
 	if err != nil {
 		return err
 	}
 	if req.OldPassword == "" {
 		return errors.New("old password is required")
 	}
-	if !receiver.checkPasswordHash(req.OldPassword, user.Password) {
+	if !self.checkPasswordHash(req.OldPassword, user.Password) {
 		return errors.New("invalid old password")
 	}
 	newReq := new(apitypes.UserUpdateAdminRequest)
 	newReq.ID = mc.UserID
 	newReq.UserUpdateSelfRequest = req
-	return receiver.updateUser(ctx, user, newReq)
+	return self.updateUser(ctx, user, newReq)
 }
 
-func (receiver *UserService) DeleteUser(ctx context.Context, req *apitypes.IDRequest) error {
-	user, err := receiver.userStore.Query(ctx, store.Where("id", req.ID))
+func (self *UserService) DeleteUser(ctx context.Context, req *apitypes.IDRequest) error {
+	user, err := self.userStore.Query(ctx, store.Where("id", req.ID))
 	if err != nil {
 		return err
 	}
-	if err := receiver.userStore.Delete(ctx, user); err != nil {
+	if err := self.userStore.Delete(ctx, user); err != nil {
 		return err
 	}
 
-	feishuUser, err := receiver.feishuUserStore.Query(ctx, store.Where("user_id", req.ID))
+	feishuUser, err := self.feishuUserStore.Query(ctx, store.Where("user_id", req.ID))
 	if err != nil {
 		if !errors.Is(err, gorm.ErrRecordNotFound) {
 			return err
 		}
 	}
 	if feishuUser != nil {
-		if err := receiver.feishuUserStore.Delete(ctx, feishuUser); err != nil {
+		if err := self.feishuUserStore.Delete(ctx, feishuUser); err != nil {
 			return err
 		}
 	}
 
-	return receiver.userStore.ClearAssociation(ctx, user, model.PreloadRoles)
+	return self.userStore.ClearAssociation(ctx, user, model.PreloadRoles)
 }
 
-func (receiver *UserService) QueryUser(ctx context.Context, req *apitypes.IDRequest) (*model.User, error) {
-	return receiver.userStore.Query(ctx, store.Where("id", req.ID), store.Preload(model.PreloadRoles))
+func (self *UserService) QueryUser(ctx context.Context, req *apitypes.IDRequest) (*model.User, error) {
+	return self.userStore.Query(ctx, store.Where("id", req.ID), store.Preload(model.PreloadRoles))
 }
 
-func (receiver *UserService) Info(ctx context.Context) (*model.User, error) {
-	mc, err := receiver.jwt.GetUser(ctx)
+func (self *UserService) Info(ctx context.Context) (*model.User, error) {
+	mc, err := self.jwt.GetUser(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -249,10 +251,10 @@ func (receiver *UserService) Info(ctx context.Context) (*model.User, error) {
 		log.WithRequestID(ctx).Error("user not found", zap.Int64("userId", mc.UserID), zap.String("userName", mc.UserName))
 		return nil, errors.New("user not found")
 	}
-	return receiver.userStore.Query(ctx, store.Where("id", mc.UserID), store.Preload(model.PreloadRoles))
+	return self.userStore.Query(ctx, store.Where("id", mc.UserID), store.Preload(model.PreloadRoles))
 }
 
-func (receiver *UserService) ListUser(ctx context.Context, req *apitypes.UserListRequest) (*apitypes.UserListResponse, error) {
+func (self *UserService) ListUser(ctx context.Context, req *apitypes.UserListRequest) (*apitypes.UserListResponse, error) {
 	var (
 		likeOpt   store.Option
 		statusOpt store.Option
@@ -279,7 +281,7 @@ func (receiver *UserService) ListUser(ctx context.Context, req *apitypes.UserLis
 		oder = req.Direction
 	}
 
-	total, objs, err := receiver.userStore.List(ctx, req.Page, req.PageSize, filed, oder, likeOpt, statusOpt)
+	total, objs, err := self.userStore.List(ctx, req.Page, req.PageSize, filed, oder, likeOpt, statusOpt)
 	if err != nil {
 		return nil, err
 	}
@@ -296,10 +298,10 @@ func (receiver *UserService) ListUser(ctx context.Context, req *apitypes.UserLis
 	return res, nil
 }
 
-func (receiver *UserService) updateUser(ctx context.Context, user *model.User, req *apitypes.UserUpdateAdminRequest) error {
+func (self *UserService) updateUser(ctx context.Context, user *model.User, req *apitypes.UserUpdateAdminRequest) error {
 	var err error
 	if user == nil {
-		user, err = receiver.userStore.Query(ctx, store.Where("id", req.ID))
+		user, err = self.userStore.Query(ctx, store.Where("id", req.ID))
 		if err != nil {
 			if errors.Is(err, gorm.ErrRecordNotFound) {
 				return fmt.Errorf("user %d not found", req.ID)
@@ -315,7 +317,7 @@ func (receiver *UserService) updateUser(ctx context.Context, user *model.User, r
 		user.Avatar = req.UserUpdateSelfRequest.Avatar
 		user.Mobile = req.UserUpdateSelfRequest.Mobile
 		if req.Password != "" {
-			hashedPassword, err := receiver.hashPassword(req.Password)
+			hashedPassword, err := self.hashPassword(req.Password)
 			if err != nil {
 				return err
 			}
@@ -326,22 +328,22 @@ func (receiver *UserService) updateUser(ctx context.Context, user *model.User, r
 	if req.Status != 0 {
 		user.Status = &req.Status
 	}
-	return receiver.userStore.Update(ctx, user)
+	return self.userStore.Update(ctx, user)
 }
 
-func (receiver *UserService) updateRole(ctx context.Context, req *apitypes.UserUpdateRoleRequest) error {
+func (self *UserService) updateRole(ctx context.Context, req *apitypes.UserUpdateRoleRequest) error {
 	var (
 		total int64
 		err   error
 		roles []*model.Role
 	)
 	req.RolesID = helper.RemoveDuplicates(req.RolesID)
-	user, err := receiver.userStore.Query(ctx, store.Where("id", req.ID), store.Preload(model.PreloadRoles))
+	user, err := self.userStore.Query(ctx, store.Where("id", req.ID), store.Preload(model.PreloadRoles))
 	if err != nil {
 		return err
 	}
 
-	total, roles, err = receiver.roleStore.List(ctx, 0, 0, "", "", store.In("id", req.RolesID))
+	total, roles, err = self.roleStore.List(ctx, 0, 0, "", "", store.In("id", req.RolesID))
 	if err != nil {
 		return err
 	}
@@ -350,12 +352,12 @@ func (receiver *UserService) updateRole(ctx context.Context, req *apitypes.UserU
 		return err
 	}
 
-	if err := receiver.userStore.ReplaceAssociation(ctx, user, model.PreloadRoles, roles); err != nil {
+	if err := self.userStore.ReplaceAssociation(ctx, user, model.PreloadRoles, roles); err != nil {
 		return err
 	}
 
 	// 如果redis缓存中存在该用户的角色，需要删除
-	cacheRoles, err := receiver.cacheStore.GetSet(ctx, store.RoleType, user.ID)
+	cacheRoles, err := self.cacheStore.GetSet(ctx, store.RoleType, user.ID)
 	if err != nil {
 		return err
 	}
@@ -365,7 +367,7 @@ func (receiver *UserService) updateRole(ctx context.Context, req *apitypes.UserU
 		return nil
 	}
 
-	if err := receiver.cacheStore.DelKey(ctx, store.RoleType, user.ID); err != nil {
+	if err := self.cacheStore.DelKey(ctx, store.RoleType, user.ID); err != nil {
 		return err
 	}
 
@@ -376,18 +378,18 @@ func (receiver *UserService) updateRole(ctx context.Context, req *apitypes.UserU
 
 	go func() {
 		time.Sleep(time.Second * 5)
-		if err := receiver.cacheStore.DelKey(context.TODO(), store.RoleType, user.ID); err != nil {
+		if err := self.cacheStore.DelKey(context.TODO(), store.RoleType, user.ID); err != nil {
 			log.WithRequestID(ctx).Error("del role cache error", zap.Int64("userID", user.ID), zap.Any("roleNames", roleNames), zap.Error(err))
 			return
 		}
 		log.WithRequestID(ctx).Info("del role cache success", zap.Int64("userID", user.ID), zap.Any("roleNames", roleNames))
 	}()
 
-	return receiver.cacheStore.SetSet(ctx, store.RoleType, user.ID, roleNames, nil)
+	return self.cacheStore.SetSet(ctx, store.RoleType, user.ID, roleNames, nil)
 }
 
 // hashPassword 对密码进行 Bcrypt 哈希
-func (receiver *UserService) hashPassword(password string) (string, error) {
+func (self *UserService) hashPassword(password string) (string, error) {
 	// bcrypt.DefaultCost 是一个合理的默认值，如果需要更高的安全性可以增加
 	hashedPassword, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
 	if err != nil {
@@ -397,16 +399,16 @@ func (receiver *UserService) hashPassword(password string) (string, error) {
 }
 
 // checkPasswordHash 验证明文密码是否与哈希密码匹配
-func (receiver *UserService) checkPasswordHash(password, hash string) bool {
+func (self *UserService) checkPasswordHash(password, hash string) bool {
 	err := bcrypt.CompareHashAndPassword([]byte(hash), []byte(password))
 	return err == nil // 如果没有错误，则匹配成功
 }
 
-func (receiver *UserService) OAuth2Login(provider, state string) (string, error) {
-	return receiver.oauth.Redirect(state, provider), nil
+func (self *UserService) OAuth2Login(provider, state string) (string, error) {
+	return self.oauth.Redirect(state, provider), nil
 }
 
-func (receiver *UserService) OAuth2Callback(ctx context.Context, req *apitypes.OAuthLoginRequest) (*apitypes.UserLoginResponse, error) {
+func (self *UserService) OAuth2Callback(ctx context.Context, req *apitypes.OAuthLoginRequest) (*apitypes.UserLoginResponse, error) {
 	var (
 		userID   int64
 		userName string
@@ -418,19 +420,19 @@ func (receiver *UserService) OAuth2Callback(ctx context.Context, req *apitypes.O
 		return nil, errors.New("invalid provider")
 	}
 
-	oauthToken, err := receiver.oauth.Auth(ctx, req.Code, provider)
+	oauthToken, err := self.oauth.Auth(ctx, req.Code, provider)
 	if err != nil {
 		return nil, err
 	}
 
-	userInfo, err := receiver.oauth.UserInfo(ctx, oauthToken, provider)
+	userInfo, err := self.oauth.UserInfo(ctx, oauthToken, provider)
 	if err != nil {
 		return nil, err
 	}
 
 	switch v := userInfo.(type) {
 	case *model.FeiShuUser:
-		feishuUser, err := receiver.feishuLogin(ctx, v)
+		feishuUser, err := self.feishuLogin(ctx, v)
 		if err != nil {
 			return nil, err
 		}
@@ -446,7 +448,7 @@ func (receiver *UserService) OAuth2Callback(ctx context.Context, req *apitypes.O
 		}
 
 	case *model.KeycloakUser:
-		u, err := receiver.genericLogin(ctx, v)
+		u, err := self.genericLogin(ctx, v)
 		if err != nil {
 			return nil, err
 		}
@@ -464,7 +466,7 @@ func (receiver *UserService) OAuth2Callback(ctx context.Context, req *apitypes.O
 		return nil, errors.New("unsupported oauth user type")
 	}
 
-	token, err := receiver.jwt.GenerateToken(userID, userName)
+	token, err := self.jwt.GenerateToken(userID, userName)
 	if err != nil {
 		return nil, err
 	}
@@ -480,12 +482,12 @@ func (receiver *UserService) OAuth2Callback(ctx context.Context, req *apitypes.O
 	}
 
 	if len(roleNames) > 0 {
-		if err := receiver.cacheStore.SetSet(ctx, store.RoleType, userID, roleNames, nil); err != nil {
+		if err := self.cacheStore.SetSet(ctx, store.RoleType, userID, roleNames, nil); err != nil {
 			log.WithRequestID(ctx).Error("login set role cache error", zap.Int64("userID", userID), zap.Any("roles", roleNames), zap.Error(err))
 		}
 	} else {
 		// set a sentinel so other parts know user has no roles
-		if err := receiver.cacheStore.SetSet(ctx, store.RoleType, userID, []any{constant.EmptyRoleSentinel}, nil); err != nil {
+		if err := self.cacheStore.SetSet(ctx, store.RoleType, userID, []any{constant.EmptyRoleSentinel}, nil); err != nil {
 			log.WithRequestID(ctx).Error("login set empty role cache error", zap.Int64("userID", userID), zap.Error(err))
 		}
 	}
@@ -493,7 +495,7 @@ func (receiver *UserService) OAuth2Callback(ctx context.Context, req *apitypes.O
 	return &apitypes.UserLoginResponse{User: user, Token: token}, nil
 }
 
-func (receiver *UserService) feishuLogin(ctx context.Context, userInfo *model.FeiShuUser) (*model.FeiShuUser, error) {
+func (self *UserService) feishuLogin(ctx context.Context, userInfo *model.FeiShuUser) (*model.FeiShuUser, error) {
 	if userInfo.UserID == "" {
 		return nil, errors.New("feishu user is empty")
 	}
@@ -514,7 +516,7 @@ func (receiver *UserService) feishuLogin(ctx context.Context, userInfo *model.Fe
 		Email:    email,
 	}
 
-	feishuUser, err := receiver.feishuUserStore.Query(ctx, store.Where("user_id", userInfo.UserID), store.Preload("User.Roles"))
+	feishuUser, err := self.feishuUserStore.Query(ctx, store.Where("user_id", userInfo.UserID), store.Preload("User.Roles"))
 	if err != nil {
 		if !errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, err
@@ -525,14 +527,14 @@ func (receiver *UserService) feishuLogin(ctx context.Context, userInfo *model.Fe
 		if feishuUser.User == nil {
 			feishuUser.User = u
 		}
-		if err := receiver.feishuUserStore.Create(ctx, feishuUser); err != nil {
+		if err := self.feishuUserStore.Create(ctx, feishuUser); err != nil {
 			return nil, err
 		}
 		return feishuUser, nil
 	}
 
 	if feishuUser.User == nil {
-		if err := receiver.userStore.Create(ctx, u); err != nil {
+		if err := self.userStore.Create(ctx, u); err != nil {
 			return nil, err
 		}
 		feishuUser.User = u
@@ -541,12 +543,12 @@ func (receiver *UserService) feishuLogin(ctx context.Context, userInfo *model.Fe
 	return feishuUser, nil
 }
 
-func (receiver *UserService) genericLogin(ctx context.Context, userInfo *model.KeycloakUser) (data *model.User, err error) {
+func (self *UserService) genericLogin(ctx context.Context, userInfo *model.KeycloakUser) (data *model.User, err error) {
 	if userInfo.Sub == "" {
 		return nil, errors.New("generic user is empty")
 	}
 
-	data, err = receiver.userStore.Query(ctx, store.Where("email", userInfo.Email), store.Preload("Roles"))
+	data, err = self.userStore.Query(ctx, store.Where("email", userInfo.Email), store.Preload("Roles"))
 	if err != nil {
 		if !errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, err
@@ -560,13 +562,13 @@ func (receiver *UserService) genericLogin(ctx context.Context, userInfo *model.K
 			Department: strings.Join(userInfo.Group, ","),
 		}
 		if len(userInfo.Roles) > 0 {
-			_, roles, err := receiver.roleStore.List(ctx, 0, 0, "", "", store.In("name", userInfo.Roles))
+			_, roles, err := self.roleStore.List(ctx, 0, 0, "", "", store.In("name", userInfo.Roles))
 			if err != nil {
 				return nil, err
 			}
 			data.Roles = roles
 		}
-		if err := receiver.userStore.Create(ctx, data); err != nil {
+		if err := self.userStore.Create(ctx, data); err != nil {
 			return nil, err
 		}
 	}
@@ -574,8 +576,8 @@ func (receiver *UserService) genericLogin(ctx context.Context, userInfo *model.K
 	return data, nil
 }
 
-func (receiver *UserService) OAuth2Provider(_ context.Context) ([]string, error) {
-	data, err := receiver.localCache.GetCache(constant.OAuth2ProviderList)
+func (self *UserService) OAuth2Provider(_ context.Context) ([]string, error) {
+	data, err := self.localCache.GetCache(constant.OAuth2ProviderList)
 	if err != nil {
 		return nil, err
 	}
@@ -587,26 +589,26 @@ func (receiver *UserService) OAuth2Provider(_ context.Context) ([]string, error)
 	return list, nil
 }
 
-func (receiver *UserService) OAuth2Activate(ctx context.Context, req *apitypes.OAuthActivateRequest) (*apitypes.UserLoginResponse, error) {
+func (self *UserService) OAuth2Activate(ctx context.Context, req *apitypes.OAuthActivateRequest) (*apitypes.UserLoginResponse, error) {
 	if req.Password != req.ConfirmPassword {
 		return nil, errors.New("password not match")
 	}
 
-	user, err := receiver.userStore.Query(ctx, store.Where("id", req.ID))
+	user, err := self.userStore.Query(ctx, store.Where("id", req.ID))
 	if err != nil {
 		return nil, err
 	}
 
-	password, err := receiver.hashPassword(req.Password)
+	password, err := self.hashPassword(req.Password)
 	if err != nil {
 		return nil, fmt.Errorf("hash password error: %v", err)
 	}
 	user.Password = password
 	user.Status = helper.Int(model.UserStatusActive)
-	if err := receiver.userStore.Update(ctx, user); err != nil {
+	if err := self.userStore.Update(ctx, user); err != nil {
 		return nil, fmt.Errorf("update user error: %v", err)
 	}
-	token, err := receiver.jwt.GenerateToken(user.ID, user.Name)
+	token, err := self.jwt.GenerateToken(user.ID, user.Name)
 	if err != nil {
 		return nil, err
 	}
