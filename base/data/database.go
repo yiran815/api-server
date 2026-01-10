@@ -1,6 +1,7 @@
 package data
 
 import (
+	"context"
 	"fmt"
 
 	"github.com/spf13/viper"
@@ -12,37 +13,11 @@ import (
 	"gorm.io/gorm/logger"
 )
 
-// type zapWriter struct {
-// 	log *zap.Logger
-// }
+var dbInstance *gorm.DB
 
-// func (w zapWriter) Printf(_ string, args ...interface{}) {
-// 	// gorm: l.Printf(l.traceErrStr, utils.FileWithLineNum(), err, float64(elapsed.Nanoseconds())/1e6, rows, sql)
-// 	if len(args) == 5 {
-// 		w.log.Error("gorm log", zap.String("err", args[1].(error).Error()), zap.Float64("elapsed", args[2].(float64)), zap.String("rows", "-"), zap.String("sql", args[4].(string)))
-// 		return
-// 	}
-// 	switch args[2].(type) {
-// 	case int64:
-// 		w.log.Info("gorm log", zap.Float64("elapsed", args[1].(float64)), zap.Int64("rows", args[2].(int64)), zap.String("sql", args[3].(string)))
-// 	case string:
-// 		w.log.Info("gorm log", zap.Float64("elapsed", args[1].(float64)), zap.String("rows", args[2].(string)), zap.String("sql", args[3].(string)))
-// 	default:
-// 		w.log.Info("gorm log", zap.Float64("elapsed", args[1].(float64)), zap.String("rows", "-"), zap.String("sql", args[3].(string)))
-// 	}
-// }
-
-// newGormLogger create a new gorm logger
-// func newGormLogger(z *zap.Logger) logger.Interface {
-// 	return logger.New(
-// 		zapWriter{log: z}, // 使用 zap writer
-// 		logger.Config{
-// 			SlowThreshold: time.Second, // 慢查询阈值
-// 			LogLevel:      logger.Info, // 级别
-// 			Colorful:      true,
-// 		},
-// 	)
-// }
+func GetDB(ctx context.Context) *gorm.DB {
+	return dbInstance.WithContext(ctx)
+}
 
 func NewDB() (*gorm.DB, func(), error) {
 	dsn, err := conf.GetMysqlDsn()
@@ -57,7 +32,7 @@ func NewDB() (*gorm.DB, func(), error) {
 		zap.S().Info("enable debug mode on the database")
 	}
 
-	dbInstance, err := gorm.Open(mysql.Open(dsn), &gorm.Config{
+	dbInstance, err = gorm.Open(mysql.Open(dsn), &gorm.Config{
 		DisableForeignKeyConstraintWhenMigrating: true,
 		Logger:                                   dbLogger,
 	})

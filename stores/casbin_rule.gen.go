@@ -180,16 +180,16 @@ type ICasbinRuleDo interface {
 	UnderlyingDB() *gorm.DB
 	schema.Tabler
 
-	FilterWithID(id int) (result model.CasbinRule, err error)
+	FilterWithID(id int) (result *model.CasbinRule, err error)
 }
 
-// SELECT * FROM @@table WHERE name = @id
-func (c casbinRuleDo) FilterWithID(id int) (result model.CasbinRule, err error) {
+// SELECT * FROM @@table WHERE id = @id
+func (c casbinRuleDo) FilterWithID(id int) (result *model.CasbinRule, err error) {
 	var params []interface{}
 
 	var generateSQL strings.Builder
 	params = append(params, id)
-	generateSQL.WriteString("SELECT * FROM casbin_rule WHERE name = ? ")
+	generateSQL.WriteString("SELECT * FROM casbin_rule WHERE id = ? ")
 
 	var executeSQL *gorm.DB
 	executeSQL = c.UnderlyingDB().Raw(generateSQL.String(), params...).Take(&result) // ignore_security_alert

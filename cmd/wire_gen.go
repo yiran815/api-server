@@ -24,19 +24,15 @@ import (
 // Injectors from wire.go:
 
 func InitApplication() (*app.Application, func(), error) {
-	db, cleanup, err := data.NewDB()
-	if err != nil {
-		return nil, nil, err
-	}
-	dbProvider := store.NewDBProvider(db)
-	userStorer := store.NewUserStore(dbProvider)
-	roleStorer := store.NewRoleStore(dbProvider)
 	client, err := data.NewRDB()
 	if err != nil {
-		cleanup()
 		return nil, nil, err
 	}
-	cacheStore, cleanup2, err := store.NewCacheStore(client)
+	cacheStore, cleanup, err := store.NewCacheStore(client)
+	if err != nil {
+		return nil, nil, err
+	}
+	db, cleanup2, err := data.NewDB()
 	if err != nil {
 		cleanup()
 		return nil, nil, err
@@ -54,12 +50,9 @@ func InitApplication() (*app.Application, func(), error) {
 		cleanup()
 		return nil, nil, err
 	}
-	feiShuUserStorer := store.NewFeiShuUserStore(dbProvider)
 	cacher := localcache.NewCacher(oAuth2)
-	userServicer := v1.NewUserService(userStorer, roleStorer, cacheStore, txManager, generateToken, oAuth2, feiShuUserStorer, cacher)
+	userServicer := v1.NewUserService(cacheStore, txManager, generateToken, oAuth2, cacher)
 	userController := controller.NewUserController(userServicer)
-	apiStorer := store.NewApiStore(dbProvider)
-	casbinStorer := store.NewCasbinStore(dbProvider)
 	enforcer, err := casbin.NewEnforcer(db)
 	if err != nil {
 		cleanup2()
@@ -67,11 +60,14 @@ func InitApplication() (*app.Application, func(), error) {
 		return nil, nil, err
 	}
 	casbinManager := casbin.NewCasbinManager(enforcer)
-	roleServicer := v1.NewRoleService(roleStorer, apiStorer, casbinStorer, casbinManager, txManager)
+	roleServicer := v1.NewRoleService(casbinManager)
 	roleController := controller.NewRoleController(roleServicer)
+	dbProvider := store.NewDBProvider(db)
+	apiStorer := store.NewApiStore(dbProvider)
 	apiServicer := v1.NewApiServicer(apiStorer)
 	apiController := controller.NewApiController(apiServicer)
 	authChecker := casbin.NewAuthChecker(enforcer)
+	userStorer := store.NewUserStore(dbProvider)
 	middlewareMiddleware := middleware.NewMiddleware(generateToken, authChecker, cacheStore, userStorer)
 	routerRouter := router.NewRouter(userController, roleController, apiController, middlewareMiddleware)
 	engine, err := server.NewHttpServer(routerRouter)

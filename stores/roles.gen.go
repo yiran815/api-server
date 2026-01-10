@@ -400,16 +400,16 @@ type IRoleDo interface {
 	UnderlyingDB() *gorm.DB
 	schema.Tabler
 
-	FilterWithID(id int) (result model.Role, err error)
+	FilterWithID(id int) (result *model.Role, err error)
 }
 
-// SELECT * FROM @@table WHERE name = @id
-func (r roleDo) FilterWithID(id int) (result model.Role, err error) {
+// SELECT * FROM @@table WHERE id = @id
+func (r roleDo) FilterWithID(id int) (result *model.Role, err error) {
 	var params []interface{}
 
 	var generateSQL strings.Builder
 	params = append(params, id)
-	generateSQL.WriteString("SELECT * FROM roles WHERE name = ? ")
+	generateSQL.WriteString("SELECT * FROM roles WHERE id = ? ")
 
 	var executeSQL *gorm.DB
 	executeSQL = r.UnderlyingDB().Raw(generateSQL.String(), params...).Take(&result) // ignore_security_alert

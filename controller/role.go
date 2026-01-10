@@ -29,8 +29,8 @@ func NewRoleController(roleService v1.RoleServicer) RoleController {
 // @Tags 角色管理
 // @Accept json
 // @Produce json
-// @Param data body apitypes.RoleCreateRequest true "创建请求参数"
-// @Success 200 {object} apitypes.Response "创建成功"
+// @Param data body types.RoleCreateRequest true "创建请求参数"
+// @Success 200 {object} types.Response "创建成功"
 // @Router /api/v1/role [post]
 func (receiver *roleController) CreateRole(c *gin.Context) {
 	ResponseOnlySuccess(c, receiver.roleService.CreateRole, bindTypeJson)
@@ -42,8 +42,8 @@ func (receiver *roleController) CreateRole(c *gin.Context) {
 // @Tags 角色管理
 // @Accept json
 // @Produce json
-// @Param data body apitypes.RoleUpdateRequest true "更新请求参数"
-// @Success 200 {object} apitypes.Response "更新成功"
+// @Param data body types.RoleUpdateRequest true "更新请求参数"
+// @Success 200 {object} types.Response "更新成功"
 // @Router /api/v1/role/:id [put]
 func (receiver *roleController) UpdateRole(c *gin.Context) {
 	ResponseOnlySuccess(c, receiver.roleService.UpdateRole, bindTypeUri, bindTypeJson)
@@ -55,8 +55,8 @@ func (receiver *roleController) UpdateRole(c *gin.Context) {
 // @Tags 角色管理
 // @Accept json
 // @Produce json
-// @Param data body apitypes.IDRequest true "删除请求参数"
-// @Success 200 {object} apitypes.Response "删除成功"
+// @Param data body types.IDRequest true "删除请求参数"
+// @Success 200 {object} types.Response "删除成功"
 // @Router /api/v1/role/:id [delete]
 func (receiver *roleController) DeleteRole(c *gin.Context) {
 	ResponseOnlySuccess(c, receiver.roleService.DeleteRole, bindTypeUri)
@@ -68,8 +68,8 @@ func (receiver *roleController) DeleteRole(c *gin.Context) {
 // @Tags 角色管理
 // @Accept json
 // @Produce json
-// @Param data body apitypes.IDRequest true "查询请求参数"
-// @Success 200 {object} apitypes.Response{data=model.Role} "查询成功"
+// @Param data body types.IDRequest true "查询请求参数"
+// @Success 200 {object} types.Response{data=model.Role} "查询成功"
 // @Router /api/v1/role/:id [get]
 func (receiver *roleController) QueryRole(c *gin.Context) {
 	ResponseWithData(c, receiver.roleService.QueryRole, bindTypeUri)
@@ -81,8 +81,8 @@ func (receiver *roleController) QueryRole(c *gin.Context) {
 // @Tags 角色管理
 // @Accept json
 // @Produce json
-// @Param data query apitypes.RoleListRequest true "查询请求参数"
-// @Success 200 {object} apitypes.Response{data=apitypes.RoleListResponse} "查询成功"
+// @Param data query types.RoleListRequest true "查询请求参数"
+// @Success 200 {object} types.Response{data=types.RoleListResponse} "查询成功"
 // @Router /api/v1/role/ [get]
 func (receiver *roleController) ListRole(c *gin.Context) {
 	ResponseWithData(c, receiver.roleService.ListRole, bindTypeUri, bindTypeQuery)

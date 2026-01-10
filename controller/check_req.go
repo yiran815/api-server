@@ -10,7 +10,7 @@ import (
 	ut "github.com/go-playground/universal-translator"
 	"github.com/go-playground/validator/v10"
 	zh_translations "github.com/go-playground/validator/v10/translations/zh"
-	"github.com/yiran15/api-server/base/apitypes"
+	"github.com/yiran15/api-server/base/types"
 )
 
 var (
@@ -59,7 +59,7 @@ func registerValidator(v *validator.Validate) error {
 }
 
 var userListValidator validator.Func = func(fl validator.FieldLevel) bool {
-	user, ok := fl.Parent().Interface().(apitypes.UserListRequest)
+	user, ok := fl.Parent().Interface().(types.UserListRequest)
 	if !ok {
 		return false
 	}
