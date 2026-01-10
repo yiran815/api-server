@@ -6,7 +6,7 @@ import (
 	"gorm.io/gorm"
 )
 
-type FeiShuUser struct {
+type OauthUser struct {
 	UID             int64          `gorm:"column:uid;primarykey;comment:关联users表中的用户id" json:"uid"`
 	User            *User          `gorm:"foreignKey:UID;references:ID" json:"user"`
 	CreatedAt       time.Time      `gorm:"column:created_at" json:"createdAt"`
@@ -28,8 +28,8 @@ type FeiShuUser struct {
 	UserID          string         `gorm:"column:user_id;size:255;comment:飞书用户ID;index:idx_user_id_status,priority:1" json:"user_id"`
 }
 
-func (receiver *FeiShuUser) TableName() string {
-	return "feishu_users"
+func (receiver *OauthUser) TableName() string {
+	return "oauth_users"
 }
 
 type KeycloakUser struct {

@@ -89,7 +89,7 @@ func TestTX(t *testing.T) {
 }
 
 func TestCreateTable(t *testing.T) {
-	if err := db.AutoMigrate(&model.FeiShuUser{}); err != nil {
+	if err := db.AutoMigrate(&model.OauthUser{}); err != nil {
 		t.Fatalf("failed to create table: %v", err)
 	}
 }

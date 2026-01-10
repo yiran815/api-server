@@ -116,7 +116,7 @@ func (f *OAuth2) UserInfo(ctx context.Context, token *oauth2.Token, provider str
 		if res.Code != 0 {
 			return nil, errors.New(res.Msg)
 		}
-		feishuUser, err := helper.UnmarshalData[model.FeiShuUser](res.Data)
+		feishuUser, err := helper.UnmarshalData[model.OauthUser](res.Data)
 		if err != nil {
 			return nil, err
 		}

@@ -25,7 +25,7 @@ func newFeiShuUser(db *gorm.DB, opts ...gen.DOOption) feiShuUser {
 	_feiShuUser := feiShuUser{}
 
 	_feiShuUser.feiShuUserDo.UseDB(db, opts...)
-	_feiShuUser.feiShuUserDo.UseModel(&model.FeiShuUser{})
+	_feiShuUser.feiShuUserDo.UseModel(&model.OauthUser{})
 
 	tableName := _feiShuUser.feiShuUserDo.TableName()
 	_feiShuUser.ALL = field.NewAsterisk(tableName)
@@ -240,7 +240,7 @@ func (a feiShuUserBelongsToUser) Session(session *gorm.Session) *feiShuUserBelon
 	return &a
 }
 
-func (a feiShuUserBelongsToUser) Model(m *model.FeiShuUser) *feiShuUserBelongsToUserTx {
+func (a feiShuUserBelongsToUser) Model(m *model.OauthUser) *feiShuUserBelongsToUserTx {
 	return &feiShuUserBelongsToUserTx{a.db.Model(m).Association(a.Name())}
 }
 
@@ -323,17 +323,17 @@ type IFeiShuUserDo interface {
 	Count() (count int64, err error)
 	Scopes(funcs ...func(gen.Dao) gen.Dao) IFeiShuUserDo
 	Unscoped() IFeiShuUserDo
-	Create(values ...*model.FeiShuUser) error
-	CreateInBatches(values []*model.FeiShuUser, batchSize int) error
-	Save(values ...*model.FeiShuUser) error
-	First() (*model.FeiShuUser, error)
-	Take() (*model.FeiShuUser, error)
-	Last() (*model.FeiShuUser, error)
-	Find() ([]*model.FeiShuUser, error)
-	FindInBatch(batchSize int, fc func(tx gen.Dao, batch int) error) (results []*model.FeiShuUser, err error)
-	FindInBatches(result *[]*model.FeiShuUser, batchSize int, fc func(tx gen.Dao, batch int) error) error
+	Create(values ...*model.OauthUser) error
+	CreateInBatches(values []*model.OauthUser, batchSize int) error
+	Save(values ...*model.OauthUser) error
+	First() (*model.OauthUser, error)
+	Take() (*model.OauthUser, error)
+	Last() (*model.OauthUser, error)
+	Find() ([]*model.OauthUser, error)
+	FindInBatch(batchSize int, fc func(tx gen.Dao, batch int) error) (results []*model.OauthUser, err error)
+	FindInBatches(result *[]*model.OauthUser, batchSize int, fc func(tx gen.Dao, batch int) error) error
 	Pluck(column field.Expr, dest interface{}) error
-	Delete(...*model.FeiShuUser) (info gen.ResultInfo, err error)
+	Delete(...*model.OauthUser) (info gen.ResultInfo, err error)
 	Update(column field.Expr, value interface{}) (info gen.ResultInfo, err error)
 	UpdateSimple(columns ...field.AssignExpr) (info gen.ResultInfo, err error)
 	Updates(value interface{}) (info gen.ResultInfo, err error)
@@ -345,9 +345,9 @@ type IFeiShuUserDo interface {
 	Assign(attrs ...field.AssignExpr) IFeiShuUserDo
 	Joins(fields ...field.RelationField) IFeiShuUserDo
 	Preload(fields ...field.RelationField) IFeiShuUserDo
-	FirstOrInit() (*model.FeiShuUser, error)
-	FirstOrCreate() (*model.FeiShuUser, error)
-	FindByPage(offset int, limit int) (result []*model.FeiShuUser, count int64, err error)
+	FirstOrInit() (*model.OauthUser, error)
+	FirstOrCreate() (*model.OauthUser, error)
+	FindByPage(offset int, limit int) (result []*model.OauthUser, count int64, err error)
 	ScanByPage(result interface{}, offset int, limit int) (count int64, err error)
 	Rows() (*sql.Rows, error)
 	Row() *sql.Row
@@ -356,11 +356,11 @@ type IFeiShuUserDo interface {
 	UnderlyingDB() *gorm.DB
 	schema.Tabler
 
-	FilterWithID(id int) (result *model.FeiShuUser, err error)
+	FilterWithID(id int) (result *model.OauthUser, err error)
 }
 
 // SELECT * FROM @@table WHERE id = @id
-func (f feiShuUserDo) FilterWithID(id int) (result *model.FeiShuUser, err error) {
+func (f feiShuUserDo) FilterWithID(id int) (result *model.OauthUser, err error) {
 	var params []interface{}
 
 	var generateSQL strings.Builder
@@ -466,57 +466,57 @@ func (f feiShuUserDo) Unscoped() IFeiShuUserDo {
 	return f.withDO(f.DO.Unscoped())
 }
 
-func (f feiShuUserDo) Create(values ...*model.FeiShuUser) error {
+func (f feiShuUserDo) Create(values ...*model.OauthUser) error {
 	if len(values) == 0 {
 		return nil
 	}
 	return f.DO.Create(values)
 }
 
-func (f feiShuUserDo) CreateInBatches(values []*model.FeiShuUser, batchSize int) error {
+func (f feiShuUserDo) CreateInBatches(values []*model.OauthUser, batchSize int) error {
 	return f.DO.CreateInBatches(values, batchSize)
 }
 
 // Save : !!! underlying implementation is different with GORM
 // The method is equivalent to executing the statement: db.Clauses(clause.OnConflict{UpdateAll: true}).Create(values)
-func (f feiShuUserDo) Save(values ...*model.FeiShuUser) error {
+func (f feiShuUserDo) Save(values ...*model.OauthUser) error {
 	if len(values) == 0 {
 		return nil
 	}
 	return f.DO.Save(values)
 }
 
-func (f feiShuUserDo) First() (*model.FeiShuUser, error) {
+func (f feiShuUserDo) First() (*model.OauthUser, error) {
 	if result, err := f.DO.First(); err != nil {
 		return nil, err
 	} else {
-		return result.(*model.FeiShuUser), nil
+		return result.(*model.OauthUser), nil
 	}
 }
 
-func (f feiShuUserDo) Take() (*model.FeiShuUser, error) {
+func (f feiShuUserDo) Take() (*model.OauthUser, error) {
 	if result, err := f.DO.Take(); err != nil {
 		return nil, err
 	} else {
-		return result.(*model.FeiShuUser), nil
+		return result.(*model.OauthUser), nil
 	}
 }
 
-func (f feiShuUserDo) Last() (*model.FeiShuUser, error) {
+func (f feiShuUserDo) Last() (*model.OauthUser, error) {
 	if result, err := f.DO.Last(); err != nil {
 		return nil, err
 	} else {
-		return result.(*model.FeiShuUser), nil
+		return result.(*model.OauthUser), nil
 	}
 }
 
-func (f feiShuUserDo) Find() ([]*model.FeiShuUser, error) {
+func (f feiShuUserDo) Find() ([]*model.OauthUser, error) {
 	result, err := f.DO.Find()
-	return result.([]*model.FeiShuUser), err
+	return result.([]*model.OauthUser), err
 }
 
-func (f feiShuUserDo) FindInBatch(batchSize int, fc func(tx gen.Dao, batch int) error) (results []*model.FeiShuUser, err error) {
-	buf := make([]*model.FeiShuUser, 0, batchSize)
+func (f feiShuUserDo) FindInBatch(batchSize int, fc func(tx gen.Dao, batch int) error) (results []*model.OauthUser, err error) {
+	buf := make([]*model.OauthUser, 0, batchSize)
 	err = f.DO.FindInBatches(&buf, batchSize, func(tx gen.Dao, batch int) error {
 		defer func() { results = append(results, buf...) }()
 		return fc(tx, batch)
@@ -524,7 +524,7 @@ func (f feiShuUserDo) FindInBatch(batchSize int, fc func(tx gen.Dao, batch int) 
 	return results, err
 }
 
-func (f feiShuUserDo) FindInBatches(result *[]*model.FeiShuUser, batchSize int, fc func(tx gen.Dao, batch int) error) error {
+func (f feiShuUserDo) FindInBatches(result *[]*model.OauthUser, batchSize int, fc func(tx gen.Dao, batch int) error) error {
 	return f.DO.FindInBatches(result, batchSize, fc)
 }
 
@@ -550,23 +550,23 @@ func (f feiShuUserDo) Preload(fields ...field.RelationField) IFeiShuUserDo {
 	return &f
 }
 
-func (f feiShuUserDo) FirstOrInit() (*model.FeiShuUser, error) {
+func (f feiShuUserDo) FirstOrInit() (*model.OauthUser, error) {
 	if result, err := f.DO.FirstOrInit(); err != nil {
 		return nil, err
 	} else {
-		return result.(*model.FeiShuUser), nil
+		return result.(*model.OauthUser), nil
 	}
 }
 
-func (f feiShuUserDo) FirstOrCreate() (*model.FeiShuUser, error) {
+func (f feiShuUserDo) FirstOrCreate() (*model.OauthUser, error) {
 	if result, err := f.DO.FirstOrCreate(); err != nil {
 		return nil, err
 	} else {
-		return result.(*model.FeiShuUser), nil
+		return result.(*model.OauthUser), nil
 	}
 }
 
-func (f feiShuUserDo) FindByPage(offset int, limit int) (result []*model.FeiShuUser, count int64, err error) {
+func (f feiShuUserDo) FindByPage(offset int, limit int) (result []*model.OauthUser, count int64, err error) {
 	result, err = f.Offset(offset).Limit(limit).Find()
 	if err != nil {
 		return
@@ -595,7 +595,7 @@ func (f feiShuUserDo) Scan(result interface{}) (err error) {
 	return f.DO.Scan(result)
 }
 
-func (f feiShuUserDo) Delete(models ...*model.FeiShuUser) (result gen.ResultInfo, err error) {
+func (f feiShuUserDo) Delete(models ...*model.OauthUser) (result gen.ResultInfo, err error) {
 	return f.DO.Delete(models)
 }
 

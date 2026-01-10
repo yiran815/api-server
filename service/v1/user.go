@@ -209,7 +209,7 @@ func (receiver *UserService) UpdateUserBySelf(ctx context.Context, req *types.Us
 func (receiver *UserService) DeleteUser(ctx context.Context, req *types.IDRequest) (err error) {
 	var (
 		user       *model.User
-		feishuUser *model.FeiShuUser
+		feishuUser *model.OauthUser
 	)
 	if user, err = u.WithContext(ctx).FilterWithID(int(req.ID)); err != nil {
 		return err
@@ -440,7 +440,7 @@ func (receiver *UserService) OAuth2Callback(ctx context.Context, req *types.OAut
 	}
 
 	switch v := userInfo.(type) {
-	case *model.FeiShuUser:
+	case *model.OauthUser:
 		feishuUser, err := receiver.feishuLogin(ctx, v)
 		if err != nil {
 			return nil, err
@@ -504,7 +504,7 @@ func (receiver *UserService) OAuth2Callback(ctx context.Context, req *types.OAut
 	return &types.UserLoginResponse{User: user, Token: token}, nil
 }
 
-func (receiver *UserService) feishuLogin(ctx context.Context, userInfo *model.FeiShuUser) (*model.FeiShuUser, error) {
+func (receiver *UserService) feishuLogin(ctx context.Context, userInfo *model.OauthUser) (*model.OauthUser, error) {
 	if userInfo.UserID == "" {
 		return nil, errors.New("feishu user is empty")
 	}
@@ -512,7 +512,7 @@ func (receiver *UserService) feishuLogin(ctx context.Context, userInfo *model.Fe
 	var (
 		err        error
 		email      string
-		feishuUser *model.FeiShuUser
+		feishuUser *model.OauthUser
 	)
 
 	if userInfo.EnterpriseEmail != "" {

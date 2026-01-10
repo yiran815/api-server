@@ -19,7 +19,7 @@ func main() {
 	}
 	defer clear()
 	g.UseDB(db)
-	g.ApplyBasic(model.User{}, model.Role{}, model.Api{}, model.CasbinRule{}, model.FeiShuUser{})
-	g.ApplyInterface(model.User{}, model.Role{}, model.Api{}, model.CasbinRule{}, model.FeiShuUser{})
+	g.ApplyBasic(model.User{}, model.Role{}, model.Api{}, model.CasbinRule{}, model.OauthUser{})
+	g.ApplyInterface(model.User{}, model.Role{}, model.Api{}, model.CasbinRule{}, model.OauthUser{})
 	g.Execute()
 }
