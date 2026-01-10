@@ -7,12 +7,6 @@ import (
 	"gorm.io/gen"
 )
 
-// Dynamic SQL
-type Querier interface {
-	// SELECT * FROM @@table WHERE name = @id
-	FilterWithID(id int) (gen.T, error)
-}
-
 func main() {
 	g := gen.NewGenerator(gen.Config{
 		OutPath: "./stores",
@@ -26,6 +20,6 @@ func main() {
 	defer clear()
 	g.UseDB(db)
 	g.ApplyBasic(model.User{}, model.Role{}, model.Api{}, model.CasbinRule{}, model.FeiShuUser{})
-	g.ApplyInterface(func(Querier) {}, model.User{}, model.Role{}, model.Api{}, model.CasbinRule{}, model.FeiShuUser{})
+	g.ApplyInterface(model.User{}, model.Role{}, model.Api{}, model.CasbinRule{}, model.FeiShuUser{})
 	g.Execute()
 }

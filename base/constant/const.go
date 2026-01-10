@@ -1,6 +1,6 @@
 package constant
 
-import "github.com/yiran15/api-server/base/apitypes"
+import apitypes "github.com/yiran15/api-server/base/types"
 
 type userContextKey struct{}
 

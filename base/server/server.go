@@ -8,10 +8,10 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
-	"github.com/yiran15/api-server/base/apitypes"
 	"github.com/yiran15/api-server/base/conf"
 	"github.com/yiran15/api-server/base/constant"
 	"github.com/yiran15/api-server/base/router"
+	apitypes "github.com/yiran15/api-server/base/types"
 	"github.com/yiran15/api-server/controller"
 	"go.uber.org/zap"
 )

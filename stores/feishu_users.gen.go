@@ -356,16 +356,16 @@ type IFeiShuUserDo interface {
 	UnderlyingDB() *gorm.DB
 	schema.Tabler
 
-	FilterWithID(id int) (result model.FeiShuUser, err error)
+	FilterWithID(id int) (result *model.FeiShuUser, err error)
 }
 
-// SELECT * FROM @@table WHERE name = @id
-func (f feiShuUserDo) FilterWithID(id int) (result model.FeiShuUser, err error) {
+// SELECT * FROM @@table WHERE id = @id
+func (f feiShuUserDo) FilterWithID(id int) (result *model.FeiShuUser, err error) {
 	var params []interface{}
 
 	var generateSQL strings.Builder
 	params = append(params, id)
-	generateSQL.WriteString("SELECT * FROM feishu_users WHERE name = ? ")
+	generateSQL.WriteString("SELECT * FROM feishu_users WHERE id = ? ")
 
 	var executeSQL *gorm.DB
 	executeSQL = f.UnderlyingDB().Raw(generateSQL.String(), params...).Take(&result) // ignore_security_alert

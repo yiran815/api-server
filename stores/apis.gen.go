@@ -310,16 +310,16 @@ type IApiDo interface {
 	UnderlyingDB() *gorm.DB
 	schema.Tabler
 
-	FilterWithID(id int) (result model.Api, err error)
+	FilterWithID(id int) (result *model.Api, err error)
 }
 
-// SELECT * FROM @@table WHERE name = @id
-func (a apiDo) FilterWithID(id int) (result model.Api, err error) {
+// SELECT * FROM @@table WHERE id = @id
+func (a apiDo) FilterWithID(id int) (result *model.Api, err error) {
 	var params []interface{}
 
 	var generateSQL strings.Builder
 	params = append(params, id)
-	generateSQL.WriteString("SELECT * FROM apis WHERE name = ? ")
+	generateSQL.WriteString("SELECT * FROM apis WHERE id = ? ")
 
 	var executeSQL *gorm.DB
 	executeSQL = a.UnderlyingDB().Raw(generateSQL.String(), params...).Take(&result) // ignore_security_alert

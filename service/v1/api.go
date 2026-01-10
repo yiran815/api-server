@@ -6,8 +6,9 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/yiran15/api-server/base/apitypes"
+	"github.com/yiran15/api-server/base/helper"
 	"github.com/yiran15/api-server/base/log"
+	"github.com/yiran15/api-server/base/types"
 	"github.com/yiran15/api-server/model"
 	"github.com/yiran15/api-server/store"
 	"go.uber.org/zap"
@@ -15,53 +16,55 @@ import (
 )
 
 type ApiServicer interface {
-	CreateApi(ctx context.Context, req *apitypes.ApiCreateRequest) error
-	UpdateApi(ctx context.Context, req *apitypes.ApiUpdateRequest) error
-	DeleteApi(ctx context.Context, req *apitypes.IDRequest) error
-	QueryApi(ctx context.Context, req *apitypes.IDRequest) (*model.Api, error)
-	ListApi(ctx context.Context, pagination *apitypes.ApiListRequest) (*apitypes.ApiListResponse, error)
+	CreateApi(ctx context.Context, req *types.ApiCreateRequest) error
+	UpdateApi(ctx context.Context, req *types.ApiUpdateRequest) error
+	DeleteApi(ctx context.Context, req *types.IDRequest) error
+	QueryApi(ctx context.Context, req *types.IDRequest) (*model.Api, error)
+	ListApi(ctx context.Context, pagination *types.ApiListRequest) (*types.ApiListResponse, error)
 }
 
-type ApiService struct {
-	apiStore store.ApiStorer
-}
+type ApiService struct{}
 
 func NewApiServicer(apiStore store.ApiStorer) ApiServicer {
-	return &ApiService{
-		apiStore: apiStore,
-	}
+	return &ApiService{}
 }
 
-func (receiver *ApiService) CreateApi(ctx context.Context, req *apitypes.ApiCreateRequest) error {
-	if api, err := receiver.apiStore.Query(ctx, store.Where("name", req.Name)); err != nil {
+func (receiver *ApiService) CreateApi(ctx context.Context, req *types.ApiCreateRequest) (err error) {
+	sql := a.WithContext(ctx)
+	if _, err = sql.Where(a.Name.Eq(req.Name)).First(); err != nil {
 		if !errors.Is(err, gorm.ErrRecordNotFound) {
 			return err
 		}
-		if api != nil {
-			return fmt.Errorf("api %s already exists", req.Name)
-		}
 	}
 
-	return receiver.apiStore.Create(ctx, &model.Api{
-		Name:        req.Name,
-		Path:        req.Path,
-		Method:      req.Method,
-		Description: req.Description,
-	})
+	if err = sql.Create(types.NewApi(req)); err != nil {
+		return err
+	}
+	return nil
 }
 
-func (receiver *ApiService) UpdateApi(ctx context.Context, req *apitypes.ApiUpdateRequest) error {
-	api, err := receiver.apiStore.Query(ctx, store.Where("id", req.ID))
-	if err != nil {
+func (receiver *ApiService) UpdateApi(ctx context.Context, req *types.ApiUpdateRequest) (err error) {
+	var (
+		api *model.Api
+		sql = a.WithContext(ctx).Where(a.ID.Eq(req.ID))
+	)
+	if api, err = sql.First(); err != nil {
 		return err
 	}
 	api.Description = req.Description
-	return receiver.apiStore.Update(ctx, api)
+	if _, err = sql.Updates(api); err != nil {
+		return err
+	}
+	return nil
 }
 
-func (receiver *ApiService) DeleteApi(ctx context.Context, req *apitypes.IDRequest) error {
-	api, err := receiver.apiStore.Query(ctx, store.Where("id", req.ID), store.Preload(model.PreloadRoles))
-	if err != nil {
+func (receiver *ApiService) DeleteApi(ctx context.Context, req *types.IDRequest) (err error) {
+	var (
+		api *model.Api
+		sql = a.WithContext(ctx).Where(a.ID.Eq(req.ID))
+	)
+
+	if api, err = sql.Preload(a.Roles).First(); err != nil {
 		return err
 	}
 
@@ -75,45 +78,49 @@ func (receiver *ApiService) DeleteApi(ctx context.Context, req *apitypes.IDReque
 		return fmt.Errorf("api %s has roles %s", api.Name, rolesName)
 	}
 
-	return receiver.apiStore.Delete(ctx, api)
+	if _, err = sql.Delete(api); err != nil {
+		return err
+	}
+	return nil
 }
 
-func (receiver *ApiService) QueryApi(ctx context.Context, req *apitypes.IDRequest) (*model.Api, error) {
-	return receiver.apiStore.Query(ctx, store.Where("id", req.ID))
+func (receiver *ApiService) QueryApi(ctx context.Context, req *types.IDRequest) (api *model.Api, err error) {
+	if api, err = a.WithContext(ctx).Where(a.ID.Eq(req.ID)).First(); err != nil {
+		return nil, err
+	}
+	return api, nil
 }
 
-func (receiver *ApiService) ListApi(ctx context.Context, req *apitypes.ApiListRequest) (*apitypes.ApiListResponse, error) {
+func (receiver *ApiService) ListApi(ctx context.Context, req *types.ApiListRequest) (res *types.ApiListResponse, err error) {
 	var (
-		where store.Option
-		colum = "id"
-		oder  = "desc"
+		apis  []*model.Api
+		total int64
+		sql   = a.WithContext(ctx)
 	)
 
 	if req.Name != "" {
-		where = store.Like("name", req.Name+"%")
+		sql = sql.Where(a.Name.Like(req.Name + "%"))
 	} else if req.Path != "" {
-		where = store.Like("path", req.Path+"%")
+		sql = sql.Where(a.Path.Like(req.Path + "%"))
 	} else if req.Method != "" {
-		where = store.Like("method", req.Method+"%")
+		sql = sql.Where(a.Method.Like(req.Method + "%"))
+	}
+
+	if total, err = sql.Count(); err != nil {
+		return nil, err
 	}
 
 	if req.Sort != "" && req.Direction != "" {
-		colum = req.Sort
-		oder = req.Direction
+		sort, ok := a.GetFieldByName(req.Sort)
+		if !ok {
+			return nil, fmt.Errorf("invalid sort field: %s", req.Sort)
+		}
+		sql = sql.Order(helper.Sort(sort, req.Direction))
 	}
 
-	total, apis, err := receiver.apiStore.List(ctx, req.Page, req.PageSize, colum, oder, where)
-	if err != nil {
+	if apis, err = sql.Limit(req.PageSize).Offset(req.Page - 1*req.PageSize).Find(); err != nil {
 		return nil, err
 	}
-	return &apitypes.ApiListResponse{
-		ListResponse: &apitypes.ListResponse{
-			Pagination: &apitypes.Pagination{
-				Page:     req.Page,
-				PageSize: req.PageSize,
-			},
-			Total: total,
-		},
-		List: apis,
-	}, nil
+
+	return types.NewApiListResponse(apis, total, req.PageSize, req.Page), nil
 }

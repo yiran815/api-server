@@ -1,4 +1,4 @@
-package apitypes
+package types
 
 type IDRequest struct {
 	ID int64 `uri:"id" binding:"required"`

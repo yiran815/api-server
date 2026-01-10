@@ -1,4 +1,4 @@
-package apitypes
+package types
 
 import "github.com/yiran15/api-server/model"
 
@@ -37,4 +37,26 @@ type ApiInfo struct {
 	Method  string `json:"method"`
 	Path    string `json:"path"`
 	Handler string `json:"handler"`
+}
+
+func NewApi(req *ApiCreateRequest) *model.Api {
+	return &model.Api{
+		Name:        req.Name,
+		Path:        req.Path,
+		Method:      req.Method,
+		Description: req.Description,
+	}
+}
+
+func NewApiListResponse(apis []*model.Api, total int64, pageSize, page int) *ApiListResponse {
+	return &ApiListResponse{
+		ListResponse: &ListResponse{
+			Total: total,
+			Pagination: &Pagination{
+				Page:     page,
+				PageSize: pageSize,
+			},
+		},
+		List: apis,
+	}
 }

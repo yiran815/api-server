@@ -1,4 +1,4 @@
-package apitypes
+package types
 
 import (
 	"github.com/yiran15/api-server/model"
@@ -81,7 +81,14 @@ type OauthLoginResponse struct {
 }
 
 type OAuthActivateRequest struct {
-	ID              string `uri:"id" binding:"required"`
+	ID              int    `uri:"id" binding:"required"`
 	Password        string `json:"password" binding:"required,min=8"`
 	ConfirmPassword string `json:"confirmPassword" binding:"required,min=8"`
+}
+
+func NewUserLoginResponse(user *model.User, token string) *UserLoginResponse {
+	return &UserLoginResponse{
+		User:  user,
+		Token: token,
+	}
 }

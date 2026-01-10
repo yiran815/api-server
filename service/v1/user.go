@@ -5,13 +5,14 @@ import (
 	"errors"
 	"fmt"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
-	"github.com/yiran15/api-server/base/apitypes"
 	"github.com/yiran15/api-server/base/constant"
 	"github.com/yiran15/api-server/base/helper"
 	"github.com/yiran15/api-server/base/log"
+	"github.com/yiran15/api-server/base/types"
 	"github.com/yiran15/api-server/model"
 	"github.com/yiran15/api-server/pkg/jwt"
 	localcache "github.com/yiran15/api-server/pkg/local_cache"
@@ -31,48 +32,41 @@ type UserServicer interface {
 type OAuthServicer interface {
 	OAuth2Provider(ctx context.Context) ([]string, error)
 	OAuth2Login(provider, state string) (string, error)
-	OAuth2Callback(ctx context.Context, req *apitypes.OAuthLoginRequest) (*apitypes.UserLoginResponse, error)
-	OAuth2Activate(ctx context.Context, req *apitypes.OAuthActivateRequest) (*apitypes.UserLoginResponse, error)
+	OAuth2Callback(ctx context.Context, req *types.OAuthLoginRequest) (*types.UserLoginResponse, error)
+	OAuth2Activate(ctx context.Context, req *types.OAuthActivateRequest) (*types.UserLoginResponse, error)
 }
 
 type GeneralUserServicer interface {
-	Login(ctx context.Context, req *apitypes.UserLoginRequest) (*apitypes.UserLoginResponse, error)
+	Login(ctx context.Context, req *types.UserLoginRequest) (*types.UserLoginResponse, error)
 	Logout(ctx context.Context) error
 	Info(ctx context.Context) (*model.User, error)
-	CreateUser(ctx context.Context, req *apitypes.UserCreateRequest) error
-	UpdateUserByAdmin(ctx context.Context, req *apitypes.UserUpdateAdminRequest) error
-	UpdateUserBySelf(ctx context.Context, req *apitypes.UserUpdateSelfRequest) error
-	DeleteUser(ctx context.Context, req *apitypes.IDRequest) error
-	QueryUser(ctx context.Context, req *apitypes.IDRequest) (*model.User, error)
-	ListUser(ctx context.Context, pagination *apitypes.UserListRequest) (*apitypes.UserListResponse, error)
+	CreateUser(ctx context.Context, req *types.UserCreateRequest) error
+	UpdateUserByAdmin(ctx context.Context, req *types.UserUpdateAdminRequest) error
+	UpdateUserBySelf(ctx context.Context, req *types.UserUpdateSelfRequest) error
+	DeleteUser(ctx context.Context, req *types.IDRequest) error
+	QueryUser(ctx context.Context, req *types.IDRequest) (*model.User, error)
+	ListUser(ctx context.Context, pagination *types.UserListRequest) (*types.UserListResponse, error)
 }
 
 type UserService struct {
-	userStore       store.UserStorer
-	roleStore       store.RoleStorer
-	cacheStore      store.CacheStorer
-	feishuUserStore store.FeiShuUserStorer
-	tx              store.TxManagerInterface
-	jwt             jwt.JwtInterface
-	oauth           *oauth.OAuth2
-	localCache      localcache.Cacher
+	cacheStore store.CacheStorer
+	tx         store.TxManagerInterface
+	jwt        jwt.JwtInterface
+	oauth      *oauth.OAuth2
+	localCache localcache.Cacher
 }
 
-func NewUserService(userStore store.UserStorer, roleStore store.RoleStorer, cacheStore store.CacheStorer, tx store.TxManagerInterface, jwt jwt.JwtInterface, feishuOauth *oauth.OAuth2, feishuUserStore store.FeiShuUserStorer, localCache localcache.Cacher) UserServicer {
+func NewUserService(cacheStore store.CacheStorer, tx store.TxManagerInterface, jwt jwt.JwtInterface, feishuOauth *oauth.OAuth2, localCache localcache.Cacher) UserServicer {
 	return &UserService{
-		userStore:       userStore,
-		roleStore:       roleStore,
-		cacheStore:      cacheStore,
-		tx:              tx,
-		jwt:             jwt,
-		oauth:           feishuOauth,
-		feishuUserStore: feishuUserStore,
-		localCache:      localCache,
+		cacheStore: cacheStore,
+		tx:         tx,
+		jwt:        jwt,
+		oauth:      feishuOauth,
+		localCache: localCache,
 	}
 }
 
-func (self *UserService) Login(ctx context.Context, req *apitypes.UserLoginRequest) (*apitypes.UserLoginResponse, error) {
-	u := stores.User
+func (receiver *UserService) Login(ctx context.Context, req *types.UserLoginRequest) (*types.UserLoginResponse, error) {
 	user, err := u.WithContext(ctx).Where(u.Email.Eq(req.Email), u.Status.Eq(1)).Preload(u.Roles).First()
 	if err != nil {
 		if !errors.Is(err, gorm.ErrRecordNotFound) {
@@ -83,19 +77,19 @@ func (self *UserService) Login(ctx context.Context, req *apitypes.UserLoginReque
 		return nil, constant.ErrLoginFailed
 	}
 
-	if !self.checkPasswordHash(req.Password, user.Password) {
+	if !receiver.checkPasswordHash(req.Password, user.Password) {
 		log.WithRequestID(ctx).
 			Error("login failed", zap.String("email", req.Email), zap.Error(constant.ErrPasswordWrong))
 		return nil, constant.ErrLoginFailed
 	}
-	token, err := self.jwt.GenerateToken(user.ID, user.Name)
+	token, err := receiver.jwt.GenerateToken(user.ID, user.Name)
 	if err != nil {
 		return nil, err
 	}
 
-	tokenExpire := self.jwt.GetExpire()
+	tokenExpire := receiver.jwt.GetExpire()
 	if len(user.Roles) == 0 {
-		if err := self.cacheStore.SetSet(ctx, store.RoleType, user.ID, []any{constant.EmptyRoleSentinel}, &tokenExpire); err != nil {
+		if err := receiver.cacheStore.SetSet(ctx, store.RoleType, user.ID, []any{constant.EmptyRoleSentinel}, &tokenExpire); err != nil {
 			log.WithRequestID(ctx).
 				Error("login set empty role cache error", zap.Int64("userID", user.ID), zap.Error(err))
 		}
@@ -104,32 +98,26 @@ func (self *UserService) Login(ctx context.Context, req *apitypes.UserLoginReque
 		for _, role := range user.Roles {
 			roleNames = append(roleNames, role.Name)
 		}
-		if err := self.cacheStore.SetSet(ctx, store.RoleType, user.ID, roleNames, &tokenExpire); err != nil {
+		if err := receiver.cacheStore.SetSet(ctx, store.RoleType, user.ID, roleNames, &tokenExpire); err != nil {
 			log.WithRequestID(ctx).
 				Error("login set role cache error", zap.Int64("userID", user.ID), zap.Any("roles", roleNames), zap.Error(err))
 		}
 	}
 
-	return &apitypes.UserLoginResponse{
-		User:  user,
-		Token: token,
-	}, nil
+	return types.NewUserLoginResponse(user, token), nil
 }
 
-func (self *UserService) Logout(ctx context.Context) error {
-	mc, err := self.jwt.GetUser(ctx)
+func (receiver *UserService) Logout(ctx context.Context) error {
+	mc, err := receiver.jwt.GetUser(ctx)
 	if err != nil {
 		return err
 	}
-	return self.cacheStore.DelKey(ctx, store.RoleType, mc.UserID)
+	return receiver.cacheStore.DelKey(ctx, store.RoleType, mc.UserID)
 }
 
-func (self *UserService) CreateUser(ctx context.Context, req *apitypes.UserCreateRequest) error {
+func (receiver *UserService) CreateUser(ctx context.Context, req *types.UserCreateRequest) (err error) {
 	var (
-		u     = stores.User
-		r     = stores.Role
 		user  *model.User
-		err   error
 		total int64
 		roles []*model.Role
 	)
@@ -148,7 +136,7 @@ func (self *UserService) CreateUser(ctx context.Context, req *apitypes.UserCreat
 		return fmt.Errorf("user %s already exists", req.Name)
 	}
 
-	hashedPassword, err := self.hashPassword(req.Password)
+	hashedPassword, err := receiver.hashPassword(req.Password)
 	if err != nil {
 		return err
 	}
@@ -178,8 +166,8 @@ func (self *UserService) CreateUser(ctx context.Context, req *apitypes.UserCreat
 	return u.WithContext(ctx).Create(user)
 }
 
-func (self *UserService) UpdateUserByAdmin(ctx context.Context, req *apitypes.UserUpdateAdminRequest) error {
-	if err := self.updateUser(ctx, nil, req); err != nil {
+func (receiver *UserService) UpdateUserByAdmin(ctx context.Context, req *types.UserUpdateAdminRequest) error {
+	if err := receiver.updateUser(ctx, nil, req); err != nil {
 		return err
 	}
 
@@ -187,63 +175,71 @@ func (self *UserService) UpdateUserByAdmin(ctx context.Context, req *apitypes.Us
 		return nil
 	}
 
-	return self.updateRole(ctx, &apitypes.UserUpdateRoleRequest{
+	return receiver.updateRole(ctx, &types.UserUpdateRoleRequest{
 		ID:      req.ID,
 		RolesID: *req.RolesID,
 	})
 }
 
-func (self *UserService) UpdateUserBySelf(ctx context.Context, req *apitypes.UserUpdateSelfRequest) error {
-	mc, err := self.jwt.GetUser(ctx)
+func (receiver *UserService) UpdateUserBySelf(ctx context.Context, req *types.UserUpdateSelfRequest) error {
+	var (
+		user *model.User
+	)
+	mc, err := receiver.jwt.GetUser(ctx)
 	if err != nil {
 		return err
 	}
-	user, err := self.userStore.Query(ctx, store.Where("id", mc.UserID))
-	if err != nil {
+
+	if user, err = u.WithContext(ctx).FilterWithID(int(mc.UserID)); err != nil {
 		return err
 	}
+
 	if req.OldPassword == "" {
 		return errors.New("old password is required")
 	}
-	if !self.checkPasswordHash(req.OldPassword, user.Password) {
+	if !receiver.checkPasswordHash(req.OldPassword, user.Password) {
 		return errors.New("invalid old password")
 	}
-	newReq := new(apitypes.UserUpdateAdminRequest)
+	newReq := new(types.UserUpdateAdminRequest)
 	newReq.ID = mc.UserID
 	newReq.UserUpdateSelfRequest = req
-	return self.updateUser(ctx, user, newReq)
+	return receiver.updateUser(ctx, user, newReq)
 }
 
-func (self *UserService) DeleteUser(ctx context.Context, req *apitypes.IDRequest) error {
-	user, err := self.userStore.Query(ctx, store.Where("id", req.ID))
-	if err != nil {
-		return err
-	}
-	if err := self.userStore.Delete(ctx, user); err != nil {
+func (receiver *UserService) DeleteUser(ctx context.Context, req *types.IDRequest) (err error) {
+	var (
+		user       *model.User
+		feishuUser *model.FeiShuUser
+	)
+	if user, err = u.WithContext(ctx).FilterWithID(int(req.ID)); err != nil {
 		return err
 	}
 
-	feishuUser, err := self.feishuUserStore.Query(ctx, store.Where("user_id", req.ID))
+	if _, err := u.WithContext(ctx).Delete(user); err != nil {
+		return err
+	}
+
+	feishuUser, err = f.WithContext(ctx).Where(f.UserID.Eq(strconv.FormatInt(req.ID, 10))).First()
 	if err != nil {
 		if !errors.Is(err, gorm.ErrRecordNotFound) {
 			return err
 		}
 	}
 	if feishuUser != nil {
-		if err := self.feishuUserStore.Delete(ctx, feishuUser); err != nil {
+		if _, err := f.WithContext(ctx).Delete(feishuUser); err != nil {
 			return err
 		}
 	}
 
-	return self.userStore.ClearAssociation(ctx, user, model.PreloadRoles)
+	return u.Roles.WithContext(ctx).Model(user).Clear()
 }
 
-func (self *UserService) QueryUser(ctx context.Context, req *apitypes.IDRequest) (*model.User, error) {
-	return self.userStore.Query(ctx, store.Where("id", req.ID), store.Preload(model.PreloadRoles))
+func (receiver *UserService) QueryUser(ctx context.Context, req *types.IDRequest) (*model.User, error) {
+	return u.WithContext(ctx).Where(u.ID.Eq(req.ID)).Preload(u.Roles).First()
 }
 
-func (self *UserService) Info(ctx context.Context) (*model.User, error) {
-	mc, err := self.jwt.GetUser(ctx)
+func (receiver *UserService) Info(ctx context.Context) (*model.User, error) {
+	mc, err := receiver.jwt.GetUser(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -251,58 +247,64 @@ func (self *UserService) Info(ctx context.Context) (*model.User, error) {
 		log.WithRequestID(ctx).Error("user not found", zap.Int64("userId", mc.UserID), zap.String("userName", mc.UserName))
 		return nil, errors.New("user not found")
 	}
-	return self.userStore.Query(ctx, store.Where("id", mc.UserID), store.Preload(model.PreloadRoles))
+	return u.WithContext(ctx).Where(u.ID.Eq(mc.UserID)).Preload(u.Roles).First()
 }
 
-func (self *UserService) ListUser(ctx context.Context, req *apitypes.UserListRequest) (*apitypes.UserListResponse, error) {
+func (receiver *UserService) ListUser(ctx context.Context, req *types.UserListRequest) (*types.UserListResponse, error) {
 	var (
-		likeOpt   store.Option
-		statusOpt store.Option
-		filed     = "id"
-		oder      = "desc"
+		sql   stores.IUserDo
+		users []*model.User
+		err   error
+		total int64
 	)
 
 	if req.Name != "" {
-		likeOpt = store.Like("name", req.Name+"%")
+		sql = u.WithContext(ctx).Where(u.Name.Like(req.Name + "%"))
 	} else if req.Email != "" {
-		likeOpt = store.Like("email", req.Email+"%")
+		sql = u.WithContext(ctx).Where(u.Email.Like(req.Email + "%"))
 	} else if req.Mobile != "" {
-		likeOpt = store.Like("mobile", req.Mobile+"%")
+		sql = u.WithContext(ctx).Where(u.Mobile.Like(req.Mobile + "%"))
 	} else if req.Department != "" {
-		likeOpt = store.Like("department", req.Department+"%")
+		sql = u.WithContext(ctx).Where(u.Department.Like(req.Department + "%"))
+	} else {
+		sql = u.WithContext(ctx)
 	}
 
 	if req.Status != 0 {
-		statusOpt = store.Where("status", req.Status)
+		sql = sql.Where(u.Status.Eq(req.Status))
 	}
 
-	if req.Sort != "" && req.Direction != "" {
-		filed = req.Sort
-		oder = req.Direction
+	if req.Sort != "" {
+		orderCol, ok := u.GetFieldByName(req.Sort)
+		if !ok {
+			return nil, fmt.Errorf("invalid sort field: %s", req.Sort)
+		}
+		sql = sql.Order(helper.Sort(orderCol, req.Direction))
 	}
 
-	total, objs, err := self.userStore.List(ctx, req.Page, req.PageSize, filed, oder, likeOpt, statusOpt)
-	if err != nil {
+	if total, err = sql.Count(); err != nil {
 		return nil, err
 	}
-	res := &apitypes.UserListResponse{
-		ListResponse: &apitypes.ListResponse{
-			Pagination: &apitypes.Pagination{
+	if users, err = sql.Limit(req.PageSize).Offset((req.Page - 1) * req.PageSize).Find(); err != nil {
+		return nil, err
+	}
+
+	res := &types.UserListResponse{
+		ListResponse: &types.ListResponse{
+			Pagination: &types.Pagination{
 				Page:     req.Page,
 				PageSize: req.PageSize,
 			},
 			Total: total,
 		},
-		List: objs,
+		List: users,
 	}
 	return res, nil
 }
 
-func (self *UserService) updateUser(ctx context.Context, user *model.User, req *apitypes.UserUpdateAdminRequest) error {
-	var err error
+func (receiver *UserService) updateUser(ctx context.Context, user *model.User, req *types.UserUpdateAdminRequest) (err error) {
 	if user == nil {
-		user, err = self.userStore.Query(ctx, store.Where("id", req.ID))
-		if err != nil {
+		if user, err = u.WithContext(ctx).Where(u.ID.Eq(req.ID)).First(); err != nil {
 			if errors.Is(err, gorm.ErrRecordNotFound) {
 				return fmt.Errorf("user %d not found", req.ID)
 			}
@@ -311,13 +313,15 @@ func (self *UserService) updateUser(ctx context.Context, user *model.User, req *
 	}
 
 	if req.UserUpdateSelfRequest != nil {
+
 		user.Name = req.UserUpdateSelfRequest.Name
 		user.NickName = req.UserUpdateSelfRequest.NickName
 		user.Email = req.UserUpdateSelfRequest.Email
 		user.Avatar = req.UserUpdateSelfRequest.Avatar
 		user.Mobile = req.UserUpdateSelfRequest.Mobile
+
 		if req.Password != "" {
-			hashedPassword, err := self.hashPassword(req.Password)
+			hashedPassword, err := receiver.hashPassword(req.Password)
 			if err != nil {
 				return err
 			}
@@ -328,36 +332,41 @@ func (self *UserService) updateUser(ctx context.Context, user *model.User, req *
 	if req.Status != 0 {
 		user.Status = &req.Status
 	}
-	return self.userStore.Update(ctx, user)
+
+	if _, err := u.WithContext(ctx).Where(u.ID.Eq(user.ID)).Updates(user); err != nil {
+		return err
+	}
+	return nil
 }
 
-func (self *UserService) updateRole(ctx context.Context, req *apitypes.UserUpdateRoleRequest) error {
+func (receiver *UserService) updateRole(ctx context.Context, req *types.UserUpdateRoleRequest) (err error) {
 	var (
 		total int64
-		err   error
 		roles []*model.Role
+		user  *model.User
 	)
 	req.RolesID = helper.RemoveDuplicates(req.RolesID)
-	user, err := self.userStore.Query(ctx, store.Where("id", req.ID), store.Preload(model.PreloadRoles))
-	if err != nil {
+	if user, err = u.WithContext(ctx).Where(u.ID.Eq(req.ID)).Preload(u.Roles).First(); err != nil {
 		return err
 	}
 
-	total, roles, err = self.roleStore.List(ctx, 0, 0, "", "", store.In("id", req.RolesID))
-	if err != nil {
+	roleSql := r.WithContext(ctx).Where(r.ID.In(req.RolesID...))
+	if total, err = roleSql.Count(); err != nil {
+		return err
+	}
+	if roles, err = roleSql.Find(); err != nil {
 		return err
 	}
 
 	if err = helper.ValidateRoleIds(req.RolesID, roles, total); err != nil {
 		return err
 	}
-
-	if err := self.userStore.ReplaceAssociation(ctx, user, model.PreloadRoles, roles); err != nil {
+	if err = u.Roles.WithContext(ctx).Model(user).Replace(roles...); err != nil {
 		return err
 	}
 
 	// 如果redis缓存中存在该用户的角色，需要删除
-	cacheRoles, err := self.cacheStore.GetSet(ctx, store.RoleType, user.ID)
+	cacheRoles, err := receiver.cacheStore.GetSet(ctx, store.RoleType, user.ID)
 	if err != nil {
 		return err
 	}
@@ -367,7 +376,7 @@ func (self *UserService) updateRole(ctx context.Context, req *apitypes.UserUpdat
 		return nil
 	}
 
-	if err := self.cacheStore.DelKey(ctx, store.RoleType, user.ID); err != nil {
+	if err := receiver.cacheStore.DelKey(ctx, store.RoleType, user.ID); err != nil {
 		return err
 	}
 
@@ -378,18 +387,18 @@ func (self *UserService) updateRole(ctx context.Context, req *apitypes.UserUpdat
 
 	go func() {
 		time.Sleep(time.Second * 5)
-		if err := self.cacheStore.DelKey(context.TODO(), store.RoleType, user.ID); err != nil {
+		if err := receiver.cacheStore.DelKey(context.TODO(), store.RoleType, user.ID); err != nil {
 			log.WithRequestID(ctx).Error("del role cache error", zap.Int64("userID", user.ID), zap.Any("roleNames", roleNames), zap.Error(err))
 			return
 		}
 		log.WithRequestID(ctx).Info("del role cache success", zap.Int64("userID", user.ID), zap.Any("roleNames", roleNames))
 	}()
 
-	return self.cacheStore.SetSet(ctx, store.RoleType, user.ID, roleNames, nil)
+	return receiver.cacheStore.SetSet(ctx, store.RoleType, user.ID, roleNames, nil)
 }
 
 // hashPassword 对密码进行 Bcrypt 哈希
-func (self *UserService) hashPassword(password string) (string, error) {
+func (receiver *UserService) hashPassword(password string) (string, error) {
 	// bcrypt.DefaultCost 是一个合理的默认值，如果需要更高的安全性可以增加
 	hashedPassword, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
 	if err != nil {
@@ -399,16 +408,16 @@ func (self *UserService) hashPassword(password string) (string, error) {
 }
 
 // checkPasswordHash 验证明文密码是否与哈希密码匹配
-func (self *UserService) checkPasswordHash(password, hash string) bool {
+func (receiver *UserService) checkPasswordHash(password, hash string) bool {
 	err := bcrypt.CompareHashAndPassword([]byte(hash), []byte(password))
 	return err == nil // 如果没有错误，则匹配成功
 }
 
-func (self *UserService) OAuth2Login(provider, state string) (string, error) {
-	return self.oauth.Redirect(state, provider), nil
+func (receiver *UserService) OAuth2Login(provider, state string) (string, error) {
+	return receiver.oauth.Redirect(state, provider), nil
 }
 
-func (self *UserService) OAuth2Callback(ctx context.Context, req *apitypes.OAuthLoginRequest) (*apitypes.UserLoginResponse, error) {
+func (receiver *UserService) OAuth2Callback(ctx context.Context, req *types.OAuthLoginRequest) (*types.UserLoginResponse, error) {
 	var (
 		userID   int64
 		userName string
@@ -420,19 +429,19 @@ func (self *UserService) OAuth2Callback(ctx context.Context, req *apitypes.OAuth
 		return nil, errors.New("invalid provider")
 	}
 
-	oauthToken, err := self.oauth.Auth(ctx, req.Code, provider)
+	oauthToken, err := receiver.oauth.Auth(ctx, req.Code, provider)
 	if err != nil {
 		return nil, err
 	}
 
-	userInfo, err := self.oauth.UserInfo(ctx, oauthToken, provider)
+	userInfo, err := receiver.oauth.UserInfo(ctx, oauthToken, provider)
 	if err != nil {
 		return nil, err
 	}
 
 	switch v := userInfo.(type) {
 	case *model.FeiShuUser:
-		feishuUser, err := self.feishuLogin(ctx, v)
+		feishuUser, err := receiver.feishuLogin(ctx, v)
 		if err != nil {
 			return nil, err
 		}
@@ -444,11 +453,11 @@ func (self *UserService) OAuth2Callback(ctx context.Context, req *apitypes.OAuth
 		userName = user.Name
 		roles = user.Roles
 		if user.Status != nil && *user.Status != model.UserStatusActive {
-			return &apitypes.UserLoginResponse{User: user, Token: ""}, nil
+			return &types.UserLoginResponse{User: user, Token: ""}, nil
 		}
 
 	case *model.KeycloakUser:
-		u, err := self.genericLogin(ctx, v)
+		u, err := receiver.genericLogin(ctx, v)
 		if err != nil {
 			return nil, err
 		}
@@ -460,13 +469,13 @@ func (self *UserService) OAuth2Callback(ctx context.Context, req *apitypes.OAuth
 		userName = user.Name
 		roles = user.Roles
 		if user.Status != nil && *user.Status != model.UserStatusActive {
-			return &apitypes.UserLoginResponse{User: user, Token: ""}, nil
+			return &types.UserLoginResponse{User: user, Token: ""}, nil
 		}
 	default:
 		return nil, errors.New("unsupported oauth user type")
 	}
 
-	token, err := self.jwt.GenerateToken(userID, userName)
+	token, err := receiver.jwt.GenerateToken(userID, userName)
 	if err != nil {
 		return nil, err
 	}
@@ -482,32 +491,37 @@ func (self *UserService) OAuth2Callback(ctx context.Context, req *apitypes.OAuth
 	}
 
 	if len(roleNames) > 0 {
-		if err := self.cacheStore.SetSet(ctx, store.RoleType, userID, roleNames, nil); err != nil {
+		if err := receiver.cacheStore.SetSet(ctx, store.RoleType, userID, roleNames, nil); err != nil {
 			log.WithRequestID(ctx).Error("login set role cache error", zap.Int64("userID", userID), zap.Any("roles", roleNames), zap.Error(err))
 		}
 	} else {
 		// set a sentinel so other parts know user has no roles
-		if err := self.cacheStore.SetSet(ctx, store.RoleType, userID, []any{constant.EmptyRoleSentinel}, nil); err != nil {
+		if err := receiver.cacheStore.SetSet(ctx, store.RoleType, userID, []any{constant.EmptyRoleSentinel}, nil); err != nil {
 			log.WithRequestID(ctx).Error("login set empty role cache error", zap.Int64("userID", userID), zap.Error(err))
 		}
 	}
 
-	return &apitypes.UserLoginResponse{User: user, Token: token}, nil
+	return &types.UserLoginResponse{User: user, Token: token}, nil
 }
 
-func (self *UserService) feishuLogin(ctx context.Context, userInfo *model.FeiShuUser) (*model.FeiShuUser, error) {
+func (receiver *UserService) feishuLogin(ctx context.Context, userInfo *model.FeiShuUser) (*model.FeiShuUser, error) {
 	if userInfo.UserID == "" {
 		return nil, errors.New("feishu user is empty")
 	}
 
-	var email string
+	var (
+		err        error
+		email      string
+		feishuUser *model.FeiShuUser
+	)
+
 	if userInfo.EnterpriseEmail != "" {
 		email = userInfo.EnterpriseEmail
 	} else if userInfo.Email != "" {
 		email = userInfo.Email
 	}
 
-	u := &model.User{
+	user := &model.User{
 		Name:     userInfo.EnName,
 		NickName: userInfo.EnName,
 		Avatar:   userInfo.AvatarUrl,
@@ -516,7 +530,7 @@ func (self *UserService) feishuLogin(ctx context.Context, userInfo *model.FeiShu
 		Email:    email,
 	}
 
-	feishuUser, err := self.feishuUserStore.Query(ctx, store.Where("user_id", userInfo.UserID), store.Preload("User.Roles"))
+	feishuUser, err = f.WithContext(ctx).Where(f.UserID.Eq(userInfo.UserID)).Preload(f.User.Roles).First()
 	if err != nil {
 		if !errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, err
@@ -525,30 +539,30 @@ func (self *UserService) feishuLogin(ctx context.Context, userInfo *model.FeiShu
 			feishuUser = userInfo
 		}
 		if feishuUser.User == nil {
-			feishuUser.User = u
+			feishuUser.User = user
 		}
-		if err := self.feishuUserStore.Create(ctx, feishuUser); err != nil {
+		if err := f.WithContext(ctx).Create(feishuUser); err != nil {
 			return nil, err
 		}
 		return feishuUser, nil
 	}
 
 	if feishuUser.User == nil {
-		if err := self.userStore.Create(ctx, u); err != nil {
+		if err := u.WithContext(ctx).Create(user); err != nil {
 			return nil, err
 		}
-		feishuUser.User = u
+		feishuUser.User = user
 	}
 
 	return feishuUser, nil
 }
 
-func (self *UserService) genericLogin(ctx context.Context, userInfo *model.KeycloakUser) (data *model.User, err error) {
+func (receiver *UserService) genericLogin(ctx context.Context, userInfo *model.KeycloakUser) (data *model.User, err error) {
 	if userInfo.Sub == "" {
 		return nil, errors.New("generic user is empty")
 	}
 
-	data, err = self.userStore.Query(ctx, store.Where("email", userInfo.Email), store.Preload("Roles"))
+	data, err = u.WithContext(ctx).Where(u.Email.Eq(userInfo.Email)).Preload(u.Roles).First()
 	if err != nil {
 		if !errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, err
@@ -562,13 +576,13 @@ func (self *UserService) genericLogin(ctx context.Context, userInfo *model.Keycl
 			Department: strings.Join(userInfo.Group, ","),
 		}
 		if len(userInfo.Roles) > 0 {
-			_, roles, err := self.roleStore.List(ctx, 0, 0, "", "", store.In("name", userInfo.Roles))
+			roles, err := r.WithContext(ctx).Where(r.Name.In(userInfo.Roles...)).Find()
 			if err != nil {
 				return nil, err
 			}
 			data.Roles = roles
 		}
-		if err := self.userStore.Create(ctx, data); err != nil {
+		if err := u.WithContext(ctx).Create(data); err != nil {
 			return nil, err
 		}
 	}
@@ -576,8 +590,8 @@ func (self *UserService) genericLogin(ctx context.Context, userInfo *model.Keycl
 	return data, nil
 }
 
-func (self *UserService) OAuth2Provider(_ context.Context) ([]string, error) {
-	data, err := self.localCache.GetCache(constant.OAuth2ProviderList)
+func (receiver *UserService) OAuth2Provider(_ context.Context) ([]string, error) {
+	data, err := receiver.localCache.GetCache(constant.OAuth2ProviderList)
 	if err != nil {
 		return nil, err
 	}
@@ -589,28 +603,36 @@ func (self *UserService) OAuth2Provider(_ context.Context) ([]string, error) {
 	return list, nil
 }
 
-func (self *UserService) OAuth2Activate(ctx context.Context, req *apitypes.OAuthActivateRequest) (*apitypes.UserLoginResponse, error) {
+func (receiver *UserService) OAuth2Activate(ctx context.Context, req *types.OAuthActivateRequest) (*types.UserLoginResponse, error) {
 	if req.Password != req.ConfirmPassword {
 		return nil, errors.New("password not match")
 	}
 
-	user, err := self.userStore.Query(ctx, store.Where("id", req.ID))
-	if err != nil {
+	var (
+		user *model.User
+		err  error
+		sql  = u.WithContext(ctx)
+	)
+
+	if user, err = sql.Where(u.ID.Eq(int64(req.ID))).First(); err != nil {
 		return nil, err
 	}
 
-	password, err := self.hashPassword(req.Password)
+	password, err := receiver.hashPassword(req.Password)
 	if err != nil {
 		return nil, fmt.Errorf("hash password error: %v", err)
 	}
+
 	user.Password = password
 	user.Status = helper.Int(model.UserStatusActive)
-	if err := self.userStore.Update(ctx, user); err != nil {
+
+	if _, err := sql.Updates(user); err != nil {
 		return nil, fmt.Errorf("update user error: %v", err)
 	}
-	token, err := self.jwt.GenerateToken(user.ID, user.Name)
+
+	token, err := receiver.jwt.GenerateToken(user.ID, user.Name)
 	if err != nil {
 		return nil, err
 	}
-	return &apitypes.UserLoginResponse{User: user, Token: token}, nil
+	return types.NewUserLoginResponse(user, token), nil
 }
