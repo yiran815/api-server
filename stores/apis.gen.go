@@ -7,7 +7,6 @@ package stores
 import (
 	"context"
 	"database/sql"
-	"strings"
 
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
@@ -309,23 +308,6 @@ type IApiDo interface {
 	Returning(value interface{}, columns ...string) IApiDo
 	UnderlyingDB() *gorm.DB
 	schema.Tabler
-
-	FilterWithID(id int) (result *model.Api, err error)
-}
-
-// SELECT * FROM @@table WHERE id = @id
-func (a apiDo) FilterWithID(id int) (result *model.Api, err error) {
-	var params []interface{}
-
-	var generateSQL strings.Builder
-	params = append(params, id)
-	generateSQL.WriteString("SELECT * FROM apis WHERE id = ? ")
-
-	var executeSQL *gorm.DB
-	executeSQL = a.UnderlyingDB().Raw(generateSQL.String(), params...).Take(&result) // ignore_security_alert
-	err = executeSQL.Error
-
-	return
 }
 
 func (a apiDo) Debug() IApiDo {

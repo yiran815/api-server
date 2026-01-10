@@ -7,7 +7,6 @@ package stores
 import (
 	"context"
 	"database/sql"
-	"strings"
 
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
@@ -399,23 +398,6 @@ type IRoleDo interface {
 	Returning(value interface{}, columns ...string) IRoleDo
 	UnderlyingDB() *gorm.DB
 	schema.Tabler
-
-	FilterWithID(id int) (result *model.Role, err error)
-}
-
-// SELECT * FROM @@table WHERE id = @id
-func (r roleDo) FilterWithID(id int) (result *model.Role, err error) {
-	var params []interface{}
-
-	var generateSQL strings.Builder
-	params = append(params, id)
-	generateSQL.WriteString("SELECT * FROM roles WHERE id = ? ")
-
-	var executeSQL *gorm.DB
-	executeSQL = r.UnderlyingDB().Raw(generateSQL.String(), params...).Take(&result) // ignore_security_alert
-	err = executeSQL.Error
-
-	return
 }
 
 func (r roleDo) Debug() IRoleDo {

@@ -7,7 +7,6 @@ package stores
 import (
 	"context"
 	"database/sql"
-	"strings"
 
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
@@ -179,23 +178,6 @@ type ICasbinRuleDo interface {
 	Returning(value interface{}, columns ...string) ICasbinRuleDo
 	UnderlyingDB() *gorm.DB
 	schema.Tabler
-
-	FilterWithID(id int) (result *model.CasbinRule, err error)
-}
-
-// SELECT * FROM @@table WHERE id = @id
-func (c casbinRuleDo) FilterWithID(id int) (result *model.CasbinRule, err error) {
-	var params []interface{}
-
-	var generateSQL strings.Builder
-	params = append(params, id)
-	generateSQL.WriteString("SELECT * FROM casbin_rule WHERE id = ? ")
-
-	var executeSQL *gorm.DB
-	executeSQL = c.UnderlyingDB().Raw(generateSQL.String(), params...).Take(&result) // ignore_security_alert
-	err = executeSQL.Error
-
-	return
 }
 
 func (c casbinRuleDo) Debug() ICasbinRuleDo {

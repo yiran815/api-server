@@ -19,7 +19,8 @@ var (
 	Q          = new(Query)
 	Api        *api
 	CasbinRule *casbinRule
-	FeiShuUser *feiShuUser
+	Oauth2User *oauth2User
+	OauthUser  *oauthUser
 	Role       *role
 	User       *user
 )
@@ -28,7 +29,8 @@ func SetDefault(db *gorm.DB, opts ...gen.DOOption) {
 	*Q = *Use(db, opts...)
 	Api = &Q.Api
 	CasbinRule = &Q.CasbinRule
-	FeiShuUser = &Q.FeiShuUser
+	Oauth2User = &Q.Oauth2User
+	OauthUser = &Q.OauthUser
 	Role = &Q.Role
 	User = &Q.User
 }
@@ -38,7 +40,8 @@ func Use(db *gorm.DB, opts ...gen.DOOption) *Query {
 		db:         db,
 		Api:        newApi(db, opts...),
 		CasbinRule: newCasbinRule(db, opts...),
-		FeiShuUser: newFeiShuUser(db, opts...),
+		Oauth2User: newOauth2User(db, opts...),
+		OauthUser:  newOauthUser(db, opts...),
 		Role:       newRole(db, opts...),
 		User:       newUser(db, opts...),
 	}
@@ -49,7 +52,8 @@ type Query struct {
 
 	Api        api
 	CasbinRule casbinRule
-	FeiShuUser feiShuUser
+	Oauth2User oauth2User
+	OauthUser  oauthUser
 	Role       role
 	User       user
 }
@@ -61,7 +65,8 @@ func (q *Query) clone(db *gorm.DB) *Query {
 		db:         db,
 		Api:        q.Api.clone(db),
 		CasbinRule: q.CasbinRule.clone(db),
-		FeiShuUser: q.FeiShuUser.clone(db),
+		Oauth2User: q.Oauth2User.clone(db),
+		OauthUser:  q.OauthUser.clone(db),
 		Role:       q.Role.clone(db),
 		User:       q.User.clone(db),
 	}
@@ -80,7 +85,8 @@ func (q *Query) ReplaceDB(db *gorm.DB) *Query {
 		db:         db,
 		Api:        q.Api.replaceDB(db),
 		CasbinRule: q.CasbinRule.replaceDB(db),
-		FeiShuUser: q.FeiShuUser.replaceDB(db),
+		Oauth2User: q.Oauth2User.replaceDB(db),
+		OauthUser:  q.OauthUser.replaceDB(db),
 		Role:       q.Role.replaceDB(db),
 		User:       q.User.replaceDB(db),
 	}
@@ -89,7 +95,8 @@ func (q *Query) ReplaceDB(db *gorm.DB) *Query {
 type queryCtx struct {
 	Api        IApiDo
 	CasbinRule ICasbinRuleDo
-	FeiShuUser IFeiShuUserDo
+	Oauth2User IOauth2UserDo
+	OauthUser  IOauthUserDo
 	Role       IRoleDo
 	User       IUserDo
 }
@@ -98,7 +105,8 @@ func (q *Query) WithContext(ctx context.Context) *queryCtx {
 	return &queryCtx{
 		Api:        q.Api.WithContext(ctx),
 		CasbinRule: q.CasbinRule.WithContext(ctx),
-		FeiShuUser: q.FeiShuUser.WithContext(ctx),
+		Oauth2User: q.Oauth2User.WithContext(ctx),
+		OauthUser:  q.OauthUser.WithContext(ctx),
 		Role:       q.Role.WithContext(ctx),
 		User:       q.User.WithContext(ctx),
 	}

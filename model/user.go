@@ -36,3 +36,87 @@ type User struct {
 func (receiver *User) TableName() string {
 	return "users"
 }
+
+// UserOption 定义为一个接受 *User 指针并对其进行修改的函数
+type UserOption func(*User)
+
+// NewUser 创建用户实例，接收可变长的 Option 参数
+func NewUser(opts ...UserOption) *User {
+	defaultStatus := UserStatusActive
+
+	u := &User{
+		Status: &defaultStatus,
+		Roles:  make([]*Role, 0),
+	}
+
+	for _, opt := range opts {
+		opt(u)
+	}
+
+	return u
+}
+
+// WithName 设置用户名称
+func WithName(name string) UserOption {
+	return func(u *User) {
+		u.Name = name
+	}
+}
+
+// WithNickName 设置昵称
+func WithNickName(nickName string) UserOption {
+	return func(u *User) {
+		u.NickName = nickName
+	}
+}
+
+// WithEmail 设置邮箱
+func WithEmail(email string) UserOption {
+	return func(u *User) {
+		u.Email = email
+	}
+}
+
+// WithPassword 设置密码
+// 注意：实际业务中这里可能需要传入加密后的 hash，或者在内部进行加密
+func WithPassword(password string) UserOption {
+	return func(u *User) {
+		u.Password = password
+	}
+}
+
+// WithMobile 设置手机号
+func WithMobile(mobile string) UserOption {
+	return func(u *User) {
+		u.Mobile = mobile
+	}
+}
+
+// WithDepartment 设置部门
+func WithDepartment(dept string) UserOption {
+	return func(u *User) {
+		u.Department = dept
+	}
+}
+
+// WithAvatar 设置头像
+func WithAvatar(avatar string) UserOption {
+	return func(u *User) {
+		u.Avatar = avatar
+	}
+}
+
+// WithStatus 设置状态
+// 注意：User 结构体中 Status 是 *int，这里处理指针转换
+func WithStatus(status int) UserOption {
+	return func(u *User) {
+		u.Status = &status
+	}
+}
+
+// WithRoles 设置角色
+func WithRoles(roles []*Role) UserOption {
+	return func(u *User) {
+		u.Roles = roles
+	}
+}

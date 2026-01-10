@@ -3,8 +3,32 @@ package model
 import (
 	"time"
 
+	"gorm.io/datatypes"
 	"gorm.io/gorm"
 )
+
+type Oauth2User struct {
+	ID        int64          `gorm:"column:id;primarykey;autoIncrement" json:"id"`
+	CreatedAt time.Time      `gorm:"column:created_at" json:"createdAt"`
+	UpdatedAt time.Time      `gorm:"column:updated_at" json:"updatedAt"`
+	DeletedAt gorm.DeletedAt `gorm:"column:deleted_at;index" json:"-"`
+	Email     string         `gorm:"column:email;size:255;index" json:"email"`
+	Provider  string         `gorm:"column:provider;size:255" json:"provider"`
+	Details   datatypes.JSON `gorm:"column:details" json:"details"`
+	User      *User          `gorm:"foreignKey:Email;references:Email" json:"user"`
+}
+
+func (receiver *Oauth2User) TableName() string {
+	return "oauth2_users"
+}
+
+func NewOauth2User(email, provider string, details datatypes.JSON) *Oauth2User {
+	return &Oauth2User{
+		Email:    email,
+		Provider: provider,
+		Details:  details,
+	}
+}
 
 type OauthUser struct {
 	UID             int64          `gorm:"column:uid;primarykey;comment:关联users表中的用户id" json:"uid"`

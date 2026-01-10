@@ -2,6 +2,7 @@ package v1
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"sort"
@@ -190,7 +191,7 @@ func (receiver *UserService) UpdateUserBySelf(ctx context.Context, req *types.Us
 		return err
 	}
 
-	if user, err = u.WithContext(ctx).FilterWithID(int(mc.UserID)); err != nil {
+	if user, err = u.WithContext(ctx).Where(u.ID.Eq(mc.UserID)).First(); err != nil {
 		return err
 	}
 
@@ -211,7 +212,7 @@ func (receiver *UserService) DeleteUser(ctx context.Context, req *types.IDReques
 		user       *model.User
 		feishuUser *model.OauthUser
 	)
-	if user, err = u.WithContext(ctx).FilterWithID(int(req.ID)); err != nil {
+	if user, err = u.WithContext(ctx).Where(u.ID.Eq(req.ID)).First(); err != nil {
 		return err
 	}
 
@@ -504,6 +505,46 @@ func (receiver *UserService) OAuth2Callback(ctx context.Context, req *types.OAut
 	return &types.UserLoginResponse{User: user, Token: token}, nil
 }
 
+func (receiver *UserService) oauth2Callback(ctx context.Context, provider string, userInfo any) (*model.Oauth2User, error) {
+	var (
+		oauth2User *model.Oauth2User
+		user       *model.User
+		oauth2sql  = oauth2.WithContext(ctx)
+		uSql       = u.WithContext(ctx)
+	)
+	email, err := helper.GetOAuth2Email(userInfo)
+	if err != nil {
+		return nil, err
+	}
+
+	if oauth2User, err = oauth2sql.Where(oauth2.Email.Eq(email)).First(); err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			userInfoByte, err := json.Marshal(userInfo)
+			if err != nil {
+				return nil, err
+			}
+
+			// TODO 完善Oauth
+			if err = oauth2sql.Create(model.NewOauth2User(email, provider, userInfoByte)); err != nil {
+				return nil, err
+			}
+		}
+		return nil, err
+	}
+
+	if user, err = uSql.Where(u.Email.Eq(email)).First(); err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			if err := uSql.Create(); err != nil {
+				return nil, err
+			}
+
+		}
+		return nil, err
+	}
+
+	return nil, nil
+}
+
 func (receiver *UserService) feishuLogin(ctx context.Context, userInfo *model.OauthUser) (*model.OauthUser, error) {
 	if userInfo.UserID == "" {
 		return nil, errors.New("feishu user is empty")
@@ -604,6 +645,12 @@ func (receiver *UserService) OAuth2Provider(_ context.Context) ([]string, error)
 }
 
 func (receiver *UserService) OAuth2Activate(ctx context.Context, req *types.OAuthActivateRequest) (*types.UserLoginResponse, error) {
+	if req.ID <= 0 {
+		return nil, errors.New("id cannot be empty")
+	}
+	if len(req.Password) < 8 {
+		return nil, errors.New("Password greater than or equal to 8")
+	}
 	if req.Password != req.ConfirmPassword {
 		return nil, errors.New("password not match")
 	}
@@ -611,10 +658,10 @@ func (receiver *UserService) OAuth2Activate(ctx context.Context, req *types.OAut
 	var (
 		user *model.User
 		err  error
-		sql  = u.WithContext(ctx)
+		sql  = u.Where(u.ID.Eq(int64(req.ID)))
 	)
 
-	if user, err = sql.Where(u.ID.Eq(int64(req.ID))).First(); err != nil {
+	if user, err = sql.First(); err != nil {
 		return nil, err
 	}
 

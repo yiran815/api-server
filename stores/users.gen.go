@@ -7,7 +7,6 @@ package stores
 import (
 	"context"
 	"database/sql"
-	"strings"
 
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
@@ -325,23 +324,6 @@ type IUserDo interface {
 	Returning(value interface{}, columns ...string) IUserDo
 	UnderlyingDB() *gorm.DB
 	schema.Tabler
-
-	FilterWithID(id int) (result *model.User, err error)
-}
-
-// SELECT * FROM @@table WHERE id = @id
-func (u userDo) FilterWithID(id int) (result *model.User, err error) {
-	var params []interface{}
-
-	var generateSQL strings.Builder
-	params = append(params, id)
-	generateSQL.WriteString("SELECT * FROM users WHERE id = ? ")
-
-	var executeSQL *gorm.DB
-	executeSQL = u.UnderlyingDB().Raw(generateSQL.String(), params...).Take(&result) // ignore_security_alert
-	err = executeSQL.Error
-
-	return
 }
 
 func (u userDo) Debug() IUserDo {
