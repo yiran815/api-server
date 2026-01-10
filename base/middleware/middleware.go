@@ -2,7 +2,7 @@ package middleware
 
 import (
 	"github.com/gin-gonic/gin"
-	"github.com/yiran15/api-server/base/apitypes"
+	apitypes "github.com/yiran15/api-server/base/types"
 	"github.com/yiran15/api-server/pkg/casbin"
 	"github.com/yiran15/api-server/pkg/jwt"
 	"github.com/yiran15/api-server/store"

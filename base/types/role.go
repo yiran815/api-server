@@ -1,6 +1,8 @@
-package apitypes
+package types
 
-import "github.com/yiran15/api-server/model"
+import (
+	"github.com/yiran15/api-server/model"
+)
 
 type RoleCreateRequest struct {
 	Name        string  `json:"name" binding:"required,ascii"`
@@ -24,4 +26,17 @@ type RoleListRequest struct {
 type RoleListResponse struct {
 	*ListResponse
 	List []*model.Role `json:"list"`
+}
+
+func NewRoleListResponse(roles []*model.Role, total int64, pageIndex, pageSize int) *RoleListResponse {
+	return &RoleListResponse{
+		ListResponse: &ListResponse{
+			Pagination: &Pagination{
+				Page:     pageIndex,
+				PageSize: pageSize,
+			},
+			Total: total,
+		},
+		List: roles,
+	}
 }

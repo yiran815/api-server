@@ -6,10 +6,10 @@ import (
 
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
-	"github.com/yiran15/api-server/base/apitypes"
 	"github.com/yiran15/api-server/base/conf"
 	"github.com/yiran15/api-server/base/constant"
 	"github.com/yiran15/api-server/base/data"
+	apitypes "github.com/yiran15/api-server/base/types"
 	"github.com/yiran15/api-server/model"
 	"github.com/yiran15/api-server/pkg/casbin"
 	"github.com/yiran15/api-server/pkg/jwt"
@@ -60,10 +60,7 @@ func getService() (*service, func(), error) {
 	}
 
 	provider := store.NewDBProvider(db)
-	userRepo := store.NewUserStore(provider)
-	roleRepo := store.NewRoleStore(provider)
 	apiRepo := store.NewApiStore(provider)
-	casbinStore := store.NewCasbinStore(provider)
 	txManager := store.NewTxManager(db)
 
 	redisClient, err := data.NewRDB()
@@ -86,8 +83,8 @@ func getService() (*service, func(), error) {
 	}
 	casbinManager := casbin.NewCasbinManager(casbinEnforcer)
 
-	userServicer := v1.NewUserService(userRepo, roleRepo, cacheStore, txManager, generateToken, nil, nil, nil)
-	roleServicer := v1.NewRoleService(roleRepo, apiRepo, casbinStore, casbinManager, txManager)
+	userServicer := v1.NewUserService(cacheStore, txManager, generateToken, nil, nil)
+	roleServicer := v1.NewRoleService(casbinManager)
 	apiServicer := v1.NewApiServicer(apiRepo)
 	return &service{
 			db:          db,

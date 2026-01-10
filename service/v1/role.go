@@ -6,51 +6,40 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/yiran15/api-server/base/apitypes"
+	"github.com/yiran15/api-server/base/data"
 	"github.com/yiran15/api-server/base/helper"
+	"github.com/yiran15/api-server/base/types"
 	"github.com/yiran15/api-server/model"
 	"github.com/yiran15/api-server/pkg/casbin"
-	"github.com/yiran15/api-server/store"
+	"github.com/yiran15/api-server/stores"
 	"gorm.io/gorm"
 )
 
 type RoleServicer interface {
-	CreateRole(ctx context.Context, req *apitypes.RoleCreateRequest) error
-	UpdateRole(ctx context.Context, req *apitypes.RoleUpdateRequest) error
-	DeleteRole(ctx context.Context, req *apitypes.IDRequest) error
-	QueryRole(ctx context.Context, req *apitypes.IDRequest) (*model.Role, error)
-	ListRole(ctx context.Context, pagination *apitypes.RoleListRequest) (*apitypes.RoleListResponse, error)
+	CreateRole(ctx context.Context, req *types.RoleCreateRequest) error
+	UpdateRole(ctx context.Context, req *types.RoleUpdateRequest) error
+	DeleteRole(ctx context.Context, req *types.IDRequest) error
+	QueryRole(ctx context.Context, req *types.IDRequest) (*model.Role, error)
+	ListRole(ctx context.Context, pagination *types.RoleListRequest) (*types.RoleListResponse, error)
 }
 
 type roleService struct {
-	roleRepository store.RoleStorer
-	apiRepository  store.ApiStorer
-	casbinStore    store.CasbinStorer
-	casbinManager  casbin.CasbinManager
-	txManager      store.TxManagerInterface
+	casbinManager casbin.CasbinManager
 }
 
-func NewRoleService(roleRepository store.RoleStorer, apiRepository store.ApiStorer, casbinStore store.CasbinStorer, casbinManager casbin.CasbinManager, txManager store.TxManagerInterface) RoleServicer {
-	return &roleService{
-		roleRepository: roleRepository,
-		apiRepository:  apiRepository,
-		casbinStore:    casbinStore,
-		casbinManager:  casbinManager,
-		txManager:      txManager,
-	}
+func NewRoleService(casbinManager casbin.CasbinManager) RoleServicer {
+	return &roleService{casbinManager: casbinManager}
 }
 
-func (receiver *roleService) CreateRole(ctx context.Context, req *apitypes.RoleCreateRequest) error {
+func (receiver *roleService) CreateRole(ctx context.Context, req *types.RoleCreateRequest) (err error) {
 	req.Apis = helper.RemoveDuplicates(req.Apis)
 	var (
 		role  *model.Role
-		total int64
 		apis  []*model.Api
-		err   error
 		rules []*model.CasbinRule
+		total int64
 	)
-
-	if role, err = receiver.roleRepository.Query(ctx, store.Where("name", req.Name)); err != nil {
+	if role, err = r.WithContext(ctx).Where(r.Name.Eq(req.Name)).First(); err != nil {
 		if !errors.Is(err, gorm.ErrRecordNotFound) {
 			return err
 		}
@@ -61,11 +50,13 @@ func (receiver *roleService) CreateRole(ctx context.Context, req *apitypes.RoleC
 	}
 
 	if len(req.Apis) > 0 {
-		total, apis, err = receiver.apiRepository.List(ctx, 0, 0, "", "", store.In("id", req.Apis))
-		if err != nil {
+		sql := a.WithContext(ctx).Where(a.ID.In(req.Apis...))
+		if total, err = sql.Count(); err != nil {
 			return err
 		}
-
+		if apis, err = sql.Find(); err != nil {
+			return err
+		}
 		if err := helper.ValidateRoleApis(req.Apis, total, apis); err != nil {
 			return err
 		}
@@ -80,42 +71,52 @@ func (receiver *roleService) CreateRole(ctx context.Context, req *apitypes.RoleC
 		})
 	}
 
-	if err := receiver.txManager.Transaction(ctx, func(ctx context.Context) error {
-		if err := receiver.roleRepository.Create(ctx, &model.Role{
+	err = stores.Use(data.GetDB(ctx)).Transaction(func(tx *stores.Query) error {
+		role := &model.Role{
 			Name:        req.Name,
 			Description: req.Description,
 			Apis:        apis,
-		}); err != nil {
+		}
+		if err := tx.CasbinRule.WithContext(ctx).Create(rules...); err != nil {
 			return err
 		}
-		if err := receiver.casbinStore.CreateBatch(ctx, rules); err != nil {
+
+		err := tx.Role.WithContext(ctx).Create(role)
+		if err != nil {
 			return err
 		}
 		return nil
-	}); err != nil {
+	})
+	if err != nil {
 		return err
 	}
 
 	return receiver.casbinManager.LoadPolicy()
 }
 
-func (receiver *roleService) UpdateRole(ctx context.Context, req *apitypes.RoleUpdateRequest) error {
+func (receiver *roleService) UpdateRole(ctx context.Context, req *types.RoleUpdateRequest) (err error) {
 	var (
-		total int64
-		apis  []*model.Api
-		err   error
-		rules []*model.CasbinRule
+		total       int64
+		role        *model.Role
+		apis        []*model.Api
+		rules       []*model.CasbinRule
+		casbinRules []*model.CasbinRule
 	)
 	req.Apis = helper.RemoveDuplicates(req.Apis)
-	role, err := receiver.roleRepository.Query(ctx, store.Where("id", req.ID))
-	if err != nil {
+	if role, err = r.WithContext(ctx).Where(r.ID.Eq(req.ID)).First(); err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return fmt.Errorf("role not found")
+		}
 		return err
 	}
 
 	role.Description = req.Description
 	if len(req.Apis) > 0 {
-		total, apis, err = receiver.apiRepository.List(ctx, 0, 0, "", "", store.In("id", req.Apis))
-		if err != nil {
+		sql := a.WithContext(ctx).Where(a.ID.In(req.Apis...))
+		if total, err = sql.Count(); err != nil {
+			return err
+		}
+		if apis, err = sql.Find(); err != nil {
 			return err
 		}
 
@@ -124,8 +125,11 @@ func (receiver *roleService) UpdateRole(ctx context.Context, req *apitypes.RoleU
 		}
 	}
 
-	total, casbinRules, err := receiver.casbinStore.List(ctx, 0, 0, "", "", store.Where("v0", role.Name))
-	if err != nil {
+	casbinSql := c.WithContext(ctx).Where(c.V0.Eq(role.Name))
+	if total, err = casbinSql.Count(); err != nil {
+		return err
+	}
+	if casbinRules, err = casbinSql.Find(); err != nil {
 		return err
 	}
 
@@ -138,32 +142,36 @@ func (receiver *roleService) UpdateRole(ctx context.Context, req *apitypes.RoleU
 		})
 	}
 
-	if err := receiver.txManager.Transaction(ctx, func(ctx context.Context) error {
-		if err := receiver.roleRepository.Update(ctx, role); err != nil {
+	err = stores.Use(data.GetDB(ctx)).Transaction(func(tx *stores.Query) error {
+		if _, err := tx.Role.WithContext(ctx).Where(r.ID.Eq(role.ID)).Updates(role); err != nil {
 			return err
 		}
 		if total > 0 {
-			if err := receiver.casbinStore.DeleteBatch(ctx, casbinRules); err != nil {
+			if _, err := tx.CasbinRule.WithContext(ctx).Delete(casbinRules...); err != nil {
 				return err
 			}
 		}
-		if err := receiver.casbinStore.CreateBatch(ctx, rules); err != nil {
+		if err := tx.Role.Apis.Model(role).Replace(apis...); err != nil {
 			return err
 		}
-		if err := receiver.roleRepository.ReplaceAssociation(ctx, role, model.PreloadApis, apis); err != nil {
+		if err := tx.CasbinRule.WithContext(ctx).Create(rules...); err != nil {
 			return err
 		}
 		return nil
-	}); err != nil {
+	})
+	if err != nil {
 		return err
 	}
 
 	return receiver.casbinManager.LoadPolicy()
 }
 
-func (receiver *roleService) DeleteRole(ctx context.Context, req *apitypes.IDRequest) error {
-	role, err := receiver.roleRepository.Query(ctx, store.Where("id", req.ID), store.Preload(model.PreloadUsers))
-	if err != nil {
+func (receiver *roleService) DeleteRole(ctx context.Context, req *types.IDRequest) (err error) {
+	var (
+		role        *model.Role
+		casbinRules []*model.CasbinRule
+	)
+	if role, err = r.WithContext(ctx).Where(r.ID.Eq(req.ID)).First(); err != nil {
 		return err
 	}
 
@@ -176,61 +184,62 @@ func (receiver *roleService) DeleteRole(ctx context.Context, req *apitypes.IDReq
 		return fmt.Errorf("the role is being used by the users %s", unames)
 	}
 
-	_, casbinRules, err := receiver.casbinStore.List(ctx, 0, 0, "", "", store.Where("v0", role.Name))
-	if err != nil {
+	if casbinRules, err = c.WithContext(ctx).Where(c.V0.Eq(role.Name)).Find(); err != nil {
 		return err
 	}
 
-	if err := receiver.txManager.Transaction(ctx, func(ctx context.Context) error {
-		if err := receiver.roleRepository.Delete(ctx, role); err != nil {
+	err = stores.Use(data.GetDB(ctx)).Transaction(func(tx *stores.Query) error {
+		if _, err = tx.Role.WithContext(ctx).Delete(role); err != nil {
 			return err
 		}
-		if err := receiver.roleRepository.ClearAssociation(ctx, role, model.PreloadApis); err != nil {
+
+		if err = tx.Role.Apis.Model(role).Clear(); err != nil {
 			return err
 		}
-		if err := receiver.casbinStore.DeleteBatch(ctx, casbinRules); err != nil {
+
+		if _, err = tx.CasbinRule.WithContext(ctx).Delete(casbinRules...); err != nil {
 			return err
 		}
 		return nil
-	}); err != nil {
-		return err
-	}
+	})
 
 	return receiver.casbinManager.LoadPolicy()
 }
 
-func (receiver *roleService) QueryRole(ctx context.Context, req *apitypes.IDRequest) (*model.Role, error) {
-	return receiver.roleRepository.Query(ctx, store.Where("id", req.ID), store.Preload(model.PreloadApis))
+func (receiver *roleService) QueryRole(ctx context.Context, req *types.IDRequest) (role *model.Role, err error) {
+	if role, err = r.WithContext(ctx).Where(r.ID.Eq(req.ID)).Preload(r.Apis).First(); err != nil {
+		return nil, err
+	}
+	return role, nil
 }
 
-func (receiver *roleService) ListRole(ctx context.Context, req *apitypes.RoleListRequest) (*apitypes.RoleListResponse, error) {
+func (receiver *roleService) ListRole(ctx context.Context, req *types.RoleListRequest) (*types.RoleListResponse, error) {
 	var (
-		where store.Option
-		colum = "id"
-		oder  = "desc"
+		err   error
+		total int64
+		roles []*model.Role
+		sql   = r.WithContext(ctx)
 	)
+
 	if req.Name != "" {
-		where = store.Like("name", req.Name+"%")
+		sql = sql.Where(r.Name.Like(req.Name + "%"))
+	}
+
+	if total, err = sql.Count(); err != nil {
+		return nil, err
 	}
 
 	if req.Sort != "" && req.Direction != "" {
-		colum = req.Sort
-		oder = req.Direction
+		sort, ok := r.GetFieldByName(req.Sort)
+		if !ok {
+			return nil, fmt.Errorf("invalid sort field: %s", req.Sort)
+		}
+		sql = sql.Order(helper.Sort(sort, req.Direction))
 	}
 
-	total, objs, err := receiver.roleRepository.List(ctx, req.Page, req.PageSize, colum, oder, where)
-	if err != nil {
+	if roles, err = sql.Limit(req.PageSize).Offset((req.Page - 1) * req.PageSize).Find(); err != nil {
 		return nil, err
 	}
-	res := &apitypes.RoleListResponse{
-		ListResponse: &apitypes.ListResponse{
-			Pagination: &apitypes.Pagination{
-				Page:     req.Page,
-				PageSize: req.PageSize,
-			},
-			Total: total,
-		},
-		List: objs,
-	}
-	return res, nil
+
+	return types.NewRoleListResponse(roles, total, req.Page, req.PageSize), nil
 }

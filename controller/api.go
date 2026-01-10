@@ -4,8 +4,8 @@ import (
 	"net/http"
 
 	"github.com/gin-gonic/gin"
-	"github.com/yiran15/api-server/base/apitypes"
 	"github.com/yiran15/api-server/base/constant"
+	"github.com/yiran15/api-server/base/types"
 	v1 "github.com/yiran15/api-server/service/v1"
 )
 
@@ -34,8 +34,8 @@ func NewApiController(apiService v1.ApiServicer) ApiController {
 // @Tags API管理
 // @Accept json
 // @Produce json
-// @Param data body apitypes.ApiCreateRequest true "创建请求参数"
-// @Success 200 {object} apitypes.Response "创建成功"
+// @Param data body types.ApiCreateRequest true "创建请求参数"
+// @Success 200 {object} types.Response "创建成功"
 // @Router /api/v1/api [post]
 func (receiver *apiController) CreateApi(c *gin.Context) {
 	ResponseOnlySuccess(c, receiver.apiService.CreateApi, bindTypeJson)
@@ -47,8 +47,8 @@ func (receiver *apiController) CreateApi(c *gin.Context) {
 // @Tags API管理
 // @Accept json
 // @Produce json
-// @Param data body apitypes.ApiUpdateRequest true "更新请求参数"
-// @Success 200 {object} apitypes.Response "更新成功"
+// @Param data body types.ApiUpdateRequest true "更新请求参数"
+// @Success 200 {object} types.Response "更新成功"
 // @Router /api/v1/api/:id [put]
 func (receiver *apiController) UpdateApi(c *gin.Context) {
 	ResponseOnlySuccess(c, receiver.apiService.UpdateApi, bindTypeUri, bindTypeJson)
@@ -60,8 +60,8 @@ func (receiver *apiController) UpdateApi(c *gin.Context) {
 // @Tags API管理
 // @Accept json
 // @Produce json
-// @Param data body apitypes.IDRequest true "删除请求参数"
-// @Success 200 {object} apitypes.Response "删除成功"
+// @Param data body types.IDRequest true "删除请求参数"
+// @Success 200 {object} types.Response "删除成功"
 // @Router /api/v1/api/:id [delete]
 func (receiver *apiController) DeleteApi(c *gin.Context) {
 	ResponseOnlySuccess(c, receiver.apiService.DeleteApi, bindTypeUri)
@@ -73,8 +73,8 @@ func (receiver *apiController) DeleteApi(c *gin.Context) {
 // @Tags API管理
 // @Accept json
 // @Produce json
-// @Param data body apitypes.IDRequest true "查询请求参数"
-// @Success 200 {object} apitypes.Response{data=model.Api} "查询成功"
+// @Param data body types.IDRequest true "查询请求参数"
+// @Success 200 {object} types.Response{data=model.Api} "查询成功"
 // @Router /api/v1/api/:id [get]
 func (receiver *apiController) QueryApi(c *gin.Context) {
 	ResponseWithData(c, receiver.apiService.QueryApi, bindTypeUri)
@@ -86,8 +86,8 @@ func (receiver *apiController) QueryApi(c *gin.Context) {
 // @Tags API管理
 // @Accept json
 // @Produce json
-// @Param data query apitypes.ApiListRequest true "查询请求参数"
-// @Success 200 {object} apitypes.Response{data=apitypes.ApiListResponse} "查询成功"
+// @Param data query types.ApiListRequest true "查询请求参数"
+// @Success 200 {object} types.Response{data=types.ApiListResponse} "查询成功"
 // @Router /api/v1/api/ [get]
 func (receiver *apiController) ListApi(c *gin.Context) {
 	ResponseWithData(c, receiver.apiService.ListApi, bindTypeUri, bindTypeQuery)
@@ -98,9 +98,9 @@ func (receiver *apiController) ListApi(c *gin.Context) {
 // @Tags API管理
 // @Accept json
 // @Produce json
-// @Success 200 {object} apitypes.Response{data=apitypes.ServerApiData} "查询成功"
+// @Success 200 {object} types.Response{data=types.ServerApiData} "查询成功"
 // @Router /api/v1/api/serverApi [get]
 func (receiver *apiController) GetServerApi(c *gin.Context) {
-	c.JSON(http.StatusOK, apitypes.NewResponseWithOpts(http.StatusOK, apitypes.WithMsg("success"), apitypes.WithData(constant.ApiData)))
-	// c.JSON(http.StatusOK, apitypes.NewResponse(http.StatusOK, "success", constant.ApiData, ""))
+	c.JSON(http.StatusOK, types.NewResponseWithOpts(http.StatusOK, types.WithMsg("success"), types.WithData(constant.ApiData)))
+	// c.JSON(http.StatusOK, types.NewResponse(http.StatusOK, "success", constant.ApiData, ""))
 }

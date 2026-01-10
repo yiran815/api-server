@@ -9,8 +9,8 @@ import (
 	"github.com/gin-contrib/requestid"
 	"github.com/gin-gonic/gin"
 	"github.com/go-sql-driver/mysql"
-	"github.com/yiran15/api-server/base/apitypes"
 	"github.com/yiran15/api-server/base/constant"
+	"github.com/yiran15/api-server/base/types"
 	"gorm.io/gorm"
 )
 
@@ -120,16 +120,16 @@ func ResponseNoBind(c *gin.Context, handler HandlerErrNoBind) {
 
 func responseError(c *gin.Context, err error) {
 	code, err := getErr(err)
-	c.JSON(code, apitypes.NewResponseWithOpts(code, apitypes.WithError(err.Error())))
+	c.JSON(code, types.NewResponseWithOpts(code, types.WithError(err.Error())))
 	c.Error(err)
 }
 
 func responseSuccess(c *gin.Context, data any) {
-	c.JSON(http.StatusOK, apitypes.NewResponseWithOpts(0, apitypes.WithMsg("success"), apitypes.WithData(data)))
+	c.JSON(http.StatusOK, types.NewResponseWithOpts(0, types.WithMsg("success"), types.WithData(data)))
 }
 
 func responseParamError(c *gin.Context, err error, errors string) {
-	c.JSON(http.StatusBadRequest, apitypes.NewResponseWithOpts(http.StatusBadRequest, apitypes.WithMsg("parameter error"), apitypes.WithError(errors)))
+	c.JSON(http.StatusBadRequest, types.NewResponseWithOpts(http.StatusBadRequest, types.WithMsg("parameter error"), types.WithError(errors)))
 	c.Error(err)
 }
 
