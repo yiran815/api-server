@@ -118,8 +118,14 @@ func (receiver *ApiService) ListApi(ctx context.Context, req *types.ApiListReque
 		sql = sql.Order(helper.Sort(sort, req.Direction))
 	}
 
-	if apis, err = sql.Limit(req.PageSize).Offset(req.Page - 1*req.PageSize).Find(); err != nil {
-		return nil, err
+	if req.PageSize == 0 || req.Page == 0 {
+		if apis, err = sql.Find(); err != nil {
+			return nil, err
+		}
+	} else {
+		if apis, err = sql.Limit(req.PageSize).Offset(req.Page - 1*req.PageSize).Find(); err != nil {
+			return nil, err
+		}
 	}
 
 	return types.NewApiListResponse(apis, total, req.PageSize, req.Page), nil

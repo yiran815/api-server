@@ -237,9 +237,14 @@ func (receiver *roleService) ListRole(ctx context.Context, req *types.RoleListRe
 		sql = sql.Order(helper.Sort(sort, req.Direction))
 	}
 
-	if roles, err = sql.Limit(req.PageSize).Offset((req.Page - 1) * req.PageSize).Find(); err != nil {
-		return nil, err
+	if req.PageSize == 0 && req.Page == 0 {
+		if roles, err = sql.Find(); err != nil {
+			return nil, err
+		}
+	} else {
+		if roles, err = sql.Limit(req.PageSize).Offset((req.Page - 1) * req.PageSize).Find(); err != nil {
+			return nil, err
+		}
 	}
-
 	return types.NewRoleListResponse(roles, total, req.Page, req.PageSize), nil
 }
