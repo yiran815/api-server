@@ -81,9 +81,9 @@ type OauthLoginResponse struct {
 }
 
 type OAuthActivateRequest struct {
-	ID              int    `uri:"id" binding:"required"`
-	Password        string `json:"password" binding:"required,min=8"`
-	ConfirmPassword string `json:"confirmPassword" binding:"required,min=8"`
+	ID              int    `uri:"id"`
+	Password        string `json:"password"`
+	ConfirmPassword string `json:"confirmPassword"`
 }
 
 func NewUserLoginResponse(user *model.User, token string) *UserLoginResponse {

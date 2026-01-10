@@ -604,6 +604,12 @@ func (receiver *UserService) OAuth2Provider(_ context.Context) ([]string, error)
 }
 
 func (receiver *UserService) OAuth2Activate(ctx context.Context, req *types.OAuthActivateRequest) (*types.UserLoginResponse, error) {
+	if req.ID <= 0 {
+		return nil, errors.New("id cannot be empty")
+	}
+	if len(req.Password) < 8 {
+		return nil, errors.New("Password greater than or equal to 8")
+	}
 	if req.Password != req.ConfirmPassword {
 		return nil, errors.New("password not match")
 	}
@@ -611,10 +617,10 @@ func (receiver *UserService) OAuth2Activate(ctx context.Context, req *types.OAut
 	var (
 		user *model.User
 		err  error
-		sql  = u.WithContext(ctx)
+		sql  = u.Where(u.ID.Eq(int64(req.ID)))
 	)
 
-	if user, err = sql.Where(u.ID.Eq(int64(req.ID))).First(); err != nil {
+	if user, err = sql.First(); err != nil {
 		return nil, err
 	}
 
