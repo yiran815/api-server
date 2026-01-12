@@ -2,14 +2,14 @@ package v1
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"sort"
-	"strconv"
-	"strings"
 	"time"
 
 	"github.com/yiran15/api-server/base/constant"
+	"github.com/yiran15/api-server/base/data"
 	"github.com/yiran15/api-server/base/helper"
 	"github.com/yiran15/api-server/base/log"
 	"github.com/yiran15/api-server/base/types"
@@ -18,7 +18,6 @@ import (
 	localcache "github.com/yiran15/api-server/pkg/local_cache"
 	"github.com/yiran15/api-server/pkg/oauth"
 	"github.com/yiran15/api-server/store"
-	"github.com/yiran15/api-server/stores"
 	"go.uber.org/zap"
 	"golang.org/x/crypto/bcrypt"
 	"gorm.io/gorm"
@@ -50,16 +49,14 @@ type GeneralUserServicer interface {
 
 type UserService struct {
 	cacheStore store.CacheStorer
-	tx         store.TxManagerInterface
 	jwt        jwt.JwtInterface
 	oauth      *oauth.OAuth2
 	localCache localcache.Cacher
 }
 
-func NewUserService(cacheStore store.CacheStorer, tx store.TxManagerInterface, jwt jwt.JwtInterface, feishuOauth *oauth.OAuth2, localCache localcache.Cacher) UserServicer {
+func NewUserService(cacheStore store.CacheStorer, jwt jwt.JwtInterface, feishuOauth *oauth.OAuth2, localCache localcache.Cacher) UserServicer {
 	return &UserService{
 		cacheStore: cacheStore,
-		tx:         tx,
 		jwt:        jwt,
 		oauth:      feishuOauth,
 		localCache: localCache,
@@ -118,7 +115,6 @@ func (receiver *UserService) Logout(ctx context.Context) error {
 func (receiver *UserService) CreateUser(ctx context.Context, req *types.UserCreateRequest) (err error) {
 	var (
 		user  *model.User
-		total int64
 		roles []*model.Role
 	)
 
@@ -142,13 +138,10 @@ func (receiver *UserService) CreateUser(ctx context.Context, req *types.UserCrea
 	}
 
 	if req.RolesID != nil {
-		if total, err = r.WithContext(ctx).Where(r.ID.In(*req.RolesID...)).Count(); err != nil {
-			return err
-		}
 		if roles, err = r.WithContext(ctx).Where(r.ID.In(*req.RolesID...)).Find(); err != nil {
 			return err
 		}
-		if err = helper.ValidateRoleIds(*req.RolesID, roles, total); err != nil {
+		if err = helper.ValidateRoleIds(*req.RolesID, roles); err != nil {
 			return err
 		}
 	}
@@ -190,7 +183,7 @@ func (receiver *UserService) UpdateUserBySelf(ctx context.Context, req *types.Us
 		return err
 	}
 
-	if user, err = u.WithContext(ctx).FilterWithID(int(mc.UserID)); err != nil {
+	if user, err = u.WithContext(ctx).Where(u.ID.Eq(mc.UserID)).First(); err != nil {
 		return err
 	}
 
@@ -208,30 +201,20 @@ func (receiver *UserService) UpdateUserBySelf(ctx context.Context, req *types.Us
 
 func (receiver *UserService) DeleteUser(ctx context.Context, req *types.IDRequest) (err error) {
 	var (
-		user       *model.User
-		feishuUser *model.OauthUser
+		user *model.User
 	)
-	if user, err = u.WithContext(ctx).FilterWithID(int(req.ID)); err != nil {
-		return err
-	}
-
-	if _, err := u.WithContext(ctx).Delete(user); err != nil {
-		return err
-	}
-
-	feishuUser, err = f.WithContext(ctx).Where(f.UserID.Eq(strconv.FormatInt(req.ID, 10))).First()
-	if err != nil {
-		if !errors.Is(err, gorm.ErrRecordNotFound) {
+	return store.Use(data.GetDB(ctx)).Transaction(func(tx *store.Query) error {
+		if user, err = tx.User.WithContext(ctx).Where(u.ID.Eq(req.ID)).Preload(u.Oauth2User).First(); err != nil {
 			return err
 		}
-	}
-	if feishuUser != nil {
-		if _, err := f.WithContext(ctx).Delete(feishuUser); err != nil {
+		if _, err := tx.User.WithContext(ctx).Delete(user); err != nil {
 			return err
 		}
-	}
-
-	return u.Roles.WithContext(ctx).Model(user).Clear()
+		if _, err := tx.Oauth2User.WithContext(ctx).Delete(user.Oauth2User); err != nil {
+			return err
+		}
+		return tx.User.Roles.WithContext(ctx).Model(user).Clear()
+	})
 }
 
 func (receiver *UserService) QueryUser(ctx context.Context, req *types.IDRequest) (*model.User, error) {
@@ -252,22 +235,20 @@ func (receiver *UserService) Info(ctx context.Context) (*model.User, error) {
 
 func (receiver *UserService) ListUser(ctx context.Context, req *types.UserListRequest) (*types.UserListResponse, error) {
 	var (
-		sql   stores.IUserDo
+		sql   = u.WithContext(ctx)
 		users []*model.User
 		err   error
 		total int64
 	)
 
 	if req.Name != "" {
-		sql = u.WithContext(ctx).Where(u.Name.Like(req.Name + "%"))
+		sql = sql.Where(u.Name.Like(req.Name + "%"))
 	} else if req.Email != "" {
-		sql = u.WithContext(ctx).Where(u.Email.Like(req.Email + "%"))
+		sql = sql.Where(u.Email.Like(req.Email + "%"))
 	} else if req.Mobile != "" {
-		sql = u.WithContext(ctx).Where(u.Mobile.Like(req.Mobile + "%"))
+		sql = sql.Where(u.Mobile.Like(req.Mobile + "%"))
 	} else if req.Department != "" {
-		sql = u.WithContext(ctx).Where(u.Department.Like(req.Department + "%"))
-	} else {
-		sql = u.WithContext(ctx)
+		sql = sql.Where(u.Department.Like(req.Department + "%"))
 	}
 
 	if req.Status != 0 {
@@ -341,7 +322,6 @@ func (receiver *UserService) updateUser(ctx context.Context, user *model.User, r
 
 func (receiver *UserService) updateRole(ctx context.Context, req *types.UserUpdateRoleRequest) (err error) {
 	var (
-		total int64
 		roles []*model.Role
 		user  *model.User
 	)
@@ -351,14 +331,11 @@ func (receiver *UserService) updateRole(ctx context.Context, req *types.UserUpda
 	}
 
 	roleSql := r.WithContext(ctx).Where(r.ID.In(req.RolesID...))
-	if total, err = roleSql.Count(); err != nil {
-		return err
-	}
 	if roles, err = roleSql.Find(); err != nil {
 		return err
 	}
 
-	if err = helper.ValidateRoleIds(req.RolesID, roles, total); err != nil {
+	if err = helper.ValidateRoleIds(req.RolesID, roles); err != nil {
 		return err
 	}
 	if err = u.Roles.WithContext(ctx).Model(user).Replace(roles...); err != nil {
@@ -419,14 +396,15 @@ func (receiver *UserService) OAuth2Login(provider, state string) (string, error)
 
 func (receiver *UserService) OAuth2Callback(ctx context.Context, req *types.OAuthLoginRequest) (*types.UserLoginResponse, error) {
 	var (
-		userID   int64
-		userName string
-		roles    []*model.Role
-		user     *model.User
+		oauth2User *model.Oauth2User
 	)
 	provider, ok := ctx.Value(constant.ProviderContextKey).(string)
 	if !ok {
 		return nil, errors.New("invalid provider")
+	}
+	_, ok = receiver.oauth.Providers[provider]
+	if !ok {
+		return nil, fmt.Errorf("unsupported oauth2 provider: %s", provider)
 	}
 
 	oauthToken, err := receiver.oauth.Auth(ctx, req.Code, provider)
@@ -439,50 +417,23 @@ func (receiver *UserService) OAuth2Callback(ctx context.Context, req *types.OAut
 		return nil, err
 	}
 
-	switch v := userInfo.(type) {
-	case *model.OauthUser:
-		feishuUser, err := receiver.feishuLogin(ctx, v)
-		if err != nil {
-			return nil, err
-		}
-		if feishuUser == nil || feishuUser.User == nil {
-			return nil, errors.New("feishu user not found after login")
-		}
-		user = feishuUser.User
-		userID = user.ID
-		userName = user.Name
-		roles = user.Roles
-		if user.Status != nil && *user.Status != model.UserStatusActive {
-			return &types.UserLoginResponse{User: user, Token: ""}, nil
-		}
-
-	case *model.KeycloakUser:
-		u, err := receiver.genericLogin(ctx, v)
-		if err != nil {
-			return nil, err
-		}
-		if u == nil {
-			return nil, errors.New("generic user not found after login")
-		}
-		user = u
-		userID = user.ID
-		userName = user.Name
-		roles = user.Roles
-		if user.Status != nil && *user.Status != model.UserStatusActive {
-			return &types.UserLoginResponse{User: user, Token: ""}, nil
-		}
-	default:
-		return nil, errors.New("unsupported oauth user type")
+	if oauth2User, err = receiver.oauth2GetUser(ctx, provider, userInfo); err != nil {
+		return nil, err
 	}
 
-	token, err := receiver.jwt.GenerateToken(userID, userName)
+	if *oauth2User.User.Status == model.UserStatusInactive {
+		log.WithRequestID(ctx).Info("oauth2 user not activated", zap.Int64("userID", oauth2User.User.ID))
+		return &types.UserLoginResponse{User: oauth2User.User, Token: ""}, nil
+	}
+
+	token, err := receiver.jwt.GenerateToken(oauth2User.User.ID, oauth2User.User.Name)
 	if err != nil {
 		return nil, err
 	}
 
-	roleNames := make([]any, 0, len(roles))
-	if len(roles) > 0 {
-		for _, r := range roles {
+	roleNames := make([]any, 0, len(oauth2User.User.Roles))
+	if len(oauth2User.User.Roles) > 0 {
+		for _, r := range oauth2User.User.Roles {
 			if r == nil {
 				continue
 			}
@@ -491,103 +442,89 @@ func (receiver *UserService) OAuth2Callback(ctx context.Context, req *types.OAut
 	}
 
 	if len(roleNames) > 0 {
-		if err := receiver.cacheStore.SetSet(ctx, store.RoleType, userID, roleNames, nil); err != nil {
-			log.WithRequestID(ctx).Error("login set role cache error", zap.Int64("userID", userID), zap.Any("roles", roleNames), zap.Error(err))
+		if err := receiver.cacheStore.SetSet(ctx, store.RoleType, oauth2User.User.ID, roleNames, nil); err != nil {
+			log.WithRequestID(ctx).Error(fmt.Sprintf("login set role cache error, userID %d", oauth2User.User.ID), zap.Error(err))
 		}
 	} else {
 		// set a sentinel so other parts know user has no roles
-		if err := receiver.cacheStore.SetSet(ctx, store.RoleType, userID, []any{constant.EmptyRoleSentinel}, nil); err != nil {
-			log.WithRequestID(ctx).Error("login set empty role cache error", zap.Int64("userID", userID), zap.Error(err))
+		if err := receiver.cacheStore.SetSet(ctx, store.RoleType, oauth2User.User.ID, []any{constant.EmptyRoleSentinel}, nil); err != nil {
+			log.WithRequestID(ctx).Error(fmt.Sprintf("login set empty role cache error,userID %d", oauth2User.User.ID), zap.Error(err))
 		}
 	}
 
-	return &types.UserLoginResponse{User: user, Token: token}, nil
+	return &types.UserLoginResponse{User: oauth2User.User, Token: token}, nil
 }
 
-func (receiver *UserService) feishuLogin(ctx context.Context, userInfo *model.OauthUser) (*model.OauthUser, error) {
-	if userInfo.UserID == "" {
-		return nil, errors.New("feishu user is empty")
-	}
-
+// oauth2GetUser 获取或创建 OAuth2 用户及对应的系统用户
+func (receiver *UserService) oauth2GetUser(ctx context.Context, provider string, userInfo any) (*model.Oauth2User, error) {
 	var (
-		err        error
-		email      string
-		feishuUser *model.OauthUser
+		oauth2User *model.Oauth2User
+		user       *model.User
+		roles      []*model.Role
+		oauth2sql  = oauth2.WithContext(ctx)
+		uSql       = u.WithContext(ctx)
+		userName   string
 	)
 
-	if userInfo.EnterpriseEmail != "" {
-		email = userInfo.EnterpriseEmail
-	} else if userInfo.Email != "" {
-		email = userInfo.Email
-	}
-
-	user := &model.User{
-		Name:     userInfo.EnName,
-		NickName: userInfo.EnName,
-		Avatar:   userInfo.AvatarUrl,
-		Mobile:   userInfo.Mobile,
-		Status:   helper.Int(model.UserStatusInactive),
-		Email:    email,
-	}
-
-	feishuUser, err = f.WithContext(ctx).Where(f.UserID.Eq(userInfo.UserID)).Preload(f.User.Roles).First()
+	email, err := helper.GetOAuth2Field(userInfo, helper.EmailFields...)
 	if err != nil {
-		if !errors.Is(err, gorm.ErrRecordNotFound) {
-			return nil, err
-		}
-		if feishuUser == nil {
-			feishuUser = userInfo
-		}
-		if feishuUser.User == nil {
-			feishuUser.User = user
-		}
-		if err := f.WithContext(ctx).Create(feishuUser); err != nil {
-			return nil, err
-		}
-		return feishuUser, nil
+		return nil, err
 	}
 
-	if feishuUser.User == nil {
-		if err := u.WithContext(ctx).Create(user); err != nil {
-			return nil, err
-		}
-		feishuUser.User = user
-	}
-
-	return feishuUser, nil
-}
-
-func (receiver *UserService) genericLogin(ctx context.Context, userInfo *model.KeycloakUser) (data *model.User, err error) {
-	if userInfo.Sub == "" {
-		return nil, errors.New("generic user is empty")
-	}
-
-	data, err = u.WithContext(ctx).Where(u.Email.Eq(userInfo.Email)).Preload(u.Roles).First()
-	if err != nil {
+	if oauth2User, err = oauth2sql.Where(oauth2.Email.Eq(email)).First(); err != nil {
 		if !errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, err
 		}
 
-		data = &model.User{
-			Name:       userInfo.PreferredUsername,
-			NickName:   userInfo.FamilyName + userInfo.GivenName,
-			Email:      userInfo.Email,
+		userInfoByte, err := json.Marshal(userInfo)
+		if err != nil {
+			return nil, err
+		}
+		if err = oauth2sql.Create(model.NewOauth2User(email, provider, userInfoByte)); err != nil {
+			return nil, err
+		}
+	}
+
+	if user, err = uSql.Where(u.Email.Eq(email)).First(); err != nil {
+		if !errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, err
+		}
+
+		role, err := r.WithContext(ctx).Where(r.Name.Eq("readOnly")).First()
+		if err != nil {
+			return nil, err
+		}
+		roles = append(roles, role)
+
+		if userName, err = helper.GetOAuth2Field(userInfo, "name"); err != nil {
+			return nil, err
+		}
+		if userName == "" {
+			userName = email
+		}
+		mobile, _ := helper.GetOAuth2Field(userInfo, "mobile")
+		nickName, _ := helper.GetOAuth2Field(userInfo, "nick_name")
+		department, _ := helper.GetOAuth2Field(userInfo, "department")
+		avatar, _ := helper.GetOAuth2Field(userInfo, "avatar_url")
+		user = &model.User{
+			Name:       userName,
+			NickName:   nickName,
+			Email:      email,
+			Mobile:     mobile,
+			Department: department,
+			Avatar:     avatar,
 			Status:     helper.Int(model.UserStatusInactive),
-			Department: strings.Join(userInfo.Group, ","),
+			Roles:      roles,
 		}
-		if len(userInfo.Roles) > 0 {
-			roles, err := r.WithContext(ctx).Where(r.Name.In(userInfo.Roles...)).Find()
-			if err != nil {
-				return nil, err
-			}
-			data.Roles = roles
-		}
-		if err := u.WithContext(ctx).Create(data); err != nil {
+		if err := uSql.Create(user); err != nil {
 			return nil, err
 		}
 	}
 
-	return data, nil
+	if oauth2User, err = oauth2sql.Where(oauth2.Email.Eq(email)).Preload(oauth2.User.Roles).First(); err != nil {
+		return nil, err
+	}
+	return oauth2User, nil
 }
 
 func (receiver *UserService) OAuth2Provider(_ context.Context) ([]string, error) {
@@ -617,7 +554,7 @@ func (receiver *UserService) OAuth2Activate(ctx context.Context, req *types.OAut
 	var (
 		user *model.User
 		err  error
-		sql  = u.Where(u.ID.Eq(int64(req.ID)))
+		sql  = u.WithContext(ctx).Where(u.ID.Eq(int64(req.ID)))
 	)
 
 	if user, err = sql.First(); err != nil {

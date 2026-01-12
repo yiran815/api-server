@@ -11,7 +11,7 @@ import (
 	"github.com/yiran15/api-server/base/types"
 	"github.com/yiran15/api-server/model"
 	"github.com/yiran15/api-server/pkg/casbin"
-	"github.com/yiran15/api-server/stores"
+	"github.com/yiran15/api-server/store"
 	"gorm.io/gorm"
 )
 
@@ -37,7 +37,6 @@ func (receiver *roleService) CreateRole(ctx context.Context, req *types.RoleCrea
 		role  *model.Role
 		apis  []*model.Api
 		rules []*model.CasbinRule
-		total int64
 	)
 	if role, err = r.WithContext(ctx).Where(r.Name.Eq(req.Name)).First(); err != nil {
 		if !errors.Is(err, gorm.ErrRecordNotFound) {
@@ -51,13 +50,10 @@ func (receiver *roleService) CreateRole(ctx context.Context, req *types.RoleCrea
 
 	if len(req.Apis) > 0 {
 		sql := a.WithContext(ctx).Where(a.ID.In(req.Apis...))
-		if total, err = sql.Count(); err != nil {
-			return err
-		}
 		if apis, err = sql.Find(); err != nil {
 			return err
 		}
-		if err := helper.ValidateRoleApis(req.Apis, total, apis); err != nil {
+		if err := helper.ValidateRoleApis(req.Apis, apis); err != nil {
 			return err
 		}
 	}
@@ -71,7 +67,7 @@ func (receiver *roleService) CreateRole(ctx context.Context, req *types.RoleCrea
 		})
 	}
 
-	err = stores.Use(data.GetDB(ctx)).Transaction(func(tx *stores.Query) error {
+	err = store.Use(data.GetDB(ctx)).Transaction(func(tx *store.Query) error {
 		role := &model.Role{
 			Name:        req.Name,
 			Description: req.Description,
@@ -120,7 +116,7 @@ func (receiver *roleService) UpdateRole(ctx context.Context, req *types.RoleUpda
 			return err
 		}
 
-		if err := helper.ValidateRoleApis(req.Apis, total, apis); err != nil {
+		if err := helper.ValidateRoleApis(req.Apis, apis); err != nil {
 			return err
 		}
 	}
@@ -142,7 +138,7 @@ func (receiver *roleService) UpdateRole(ctx context.Context, req *types.RoleUpda
 		})
 	}
 
-	err = stores.Use(data.GetDB(ctx)).Transaction(func(tx *stores.Query) error {
+	err = store.Use(data.GetDB(ctx)).Transaction(func(tx *store.Query) error {
 		if _, err := tx.Role.WithContext(ctx).Where(r.ID.Eq(role.ID)).Updates(role); err != nil {
 			return err
 		}
@@ -188,7 +184,7 @@ func (receiver *roleService) DeleteRole(ctx context.Context, req *types.IDReques
 		return err
 	}
 
-	err = stores.Use(data.GetDB(ctx)).Transaction(func(tx *stores.Query) error {
+	err = store.Use(data.GetDB(ctx)).Transaction(func(tx *store.Query) error {
 		if _, err = tx.Role.WithContext(ctx).Delete(role); err != nil {
 			return err
 		}

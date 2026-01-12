@@ -1,19 +1,21 @@
 package v1
 
-import "github.com/yiran15/api-server/stores"
+import (
+	"github.com/yiran15/api-server/store"
+)
 
 var (
-	u = stores.User
-	r = stores.Role
-	f = stores.FeiShuUser
-	a = stores.Api
-	c = stores.CasbinRule
+	u      = store.User
+	r      = store.Role
+	a      = store.Api
+	c      = store.CasbinRule
+	oauth2 = store.Oauth2User
 )
 
 func NewStore() {
-	u = stores.User
-	r = stores.Role
-	f = stores.FeiShuUser
-	a = stores.Api
-	c = stores.CasbinRule
+	u = store.User
+	r = store.Role
+	a = store.Api
+	c = store.CasbinRule
+	oauth2 = store.Oauth2User
 }

@@ -7,7 +7,6 @@ import (
 	"github.com/gin-contrib/requestid"
 	"github.com/gin-gonic/gin"
 	"github.com/yiran15/api-server/base/constant"
-	"github.com/yiran15/api-server/model"
 	"github.com/yiran15/api-server/pkg/jwt"
 	"github.com/yiran15/api-server/store"
 	"go.uber.org/zap"
@@ -72,7 +71,7 @@ func (m *Middleware) getRolesByUser(c *gin.Context, claims *jwt.JwtClaims, reque
 		return roles, nil
 	}
 
-	user, err := m.userStore.Query(ctx, store.Where("id", claims.UserID), store.Preload(model.PreloadRoles))
+	user, err := store.User.WithContext(ctx).Where(store.User.ID.Eq(claims.UserID)).Preload(store.User.Roles).First()
 	if err != nil {
 		zap.L().Error("authz get user by id failed", zap.String("request-id", requestID), zap.Error(err))
 		return nil, err

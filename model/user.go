@@ -31,6 +31,7 @@ type User struct {
 	Mobile     string         `gorm:"column:mobile;comment:用户手机号;size:20" json:"mobile"`
 	Status     *int           `gorm:"column:status;comment:用户状态,1可用,2禁用,3未激活;size:1;default:1" json:"status"`
 	Roles      []*Role        `gorm:"many2many:user_roles" json:"roles,omitempty"`
+	Oauth2User *Oauth2User    `gorm:"foreignKey:Email;references:Email" json:"oauth2User,omitempty"`
 }
 
 func (receiver *User) TableName() string {

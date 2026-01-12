@@ -32,27 +32,24 @@ func InitApplication() (*app.Application, func(), error) {
 	if err != nil {
 		return nil, nil, err
 	}
-	db, cleanup2, err := data.NewDB()
-	if err != nil {
-		cleanup()
-		return nil, nil, err
-	}
-	txManager := store.NewTxManager(db)
 	generateToken, err := jwt.NewGenerateToken()
 	if err != nil {
-		cleanup2()
 		cleanup()
 		return nil, nil, err
 	}
 	oAuth2, err := oauth.NewOAuth2()
 	if err != nil {
-		cleanup2()
 		cleanup()
 		return nil, nil, err
 	}
 	cacher := localcache.NewCacher(oAuth2)
-	userServicer := v1.NewUserService(cacheStore, txManager, generateToken, oAuth2, cacher)
+	userServicer := v1.NewUserService(cacheStore, generateToken, oAuth2, cacher)
 	userController := controller.NewUserController(userServicer)
+	db, cleanup2, err := data.NewDB()
+	if err != nil {
+		cleanup()
+		return nil, nil, err
+	}
 	enforcer, err := casbin.NewEnforcer(db)
 	if err != nil {
 		cleanup2()
@@ -62,13 +59,10 @@ func InitApplication() (*app.Application, func(), error) {
 	casbinManager := casbin.NewCasbinManager(enforcer)
 	roleServicer := v1.NewRoleService(casbinManager)
 	roleController := controller.NewRoleController(roleServicer)
-	dbProvider := store.NewDBProvider(db)
-	apiStorer := store.NewApiStore(dbProvider)
-	apiServicer := v1.NewApiServicer(apiStorer)
+	apiServicer := v1.NewApiServicer()
 	apiController := controller.NewApiController(apiServicer)
 	authChecker := casbin.NewAuthChecker(enforcer)
-	userStorer := store.NewUserStore(dbProvider)
-	middlewareMiddleware := middleware.NewMiddleware(generateToken, authChecker, cacheStore, userStorer)
+	middlewareMiddleware := middleware.NewMiddleware(generateToken, authChecker, cacheStore)
 	routerRouter := router.NewRouter(userController, roleController, apiController, middlewareMiddleware)
 	engine, err := server.NewHttpServer(routerRouter)
 	if err != nil {

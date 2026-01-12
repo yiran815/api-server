@@ -3,10 +3,34 @@ package model
 import (
 	"time"
 
+	"gorm.io/datatypes"
 	"gorm.io/gorm"
 )
 
-type OauthUser struct {
+type Oauth2User struct {
+	ID        int64          `gorm:"column:id;primarykey;autoIncrement" json:"id"`
+	CreatedAt time.Time      `gorm:"column:created_at" json:"createdAt"`
+	UpdatedAt time.Time      `gorm:"column:updated_at" json:"updatedAt"`
+	DeletedAt gorm.DeletedAt `gorm:"column:deleted_at;index" json:"-"`
+	Email     string         `gorm:"column:email;size:255;index" json:"email"`
+	Provider  string         `gorm:"column:provider;size:255" json:"provider"`
+	Details   datatypes.JSON `gorm:"column:details" json:"details"`
+	User      *User          `gorm:"foreignKey:Email;references:Email" json:"user"`
+}
+
+func (receiver *Oauth2User) TableName() string {
+	return "oauth2_users"
+}
+
+func NewOauth2User(email, provider string, details datatypes.JSON) *Oauth2User {
+	return &Oauth2User{
+		Email:    email,
+		Provider: provider,
+		Details:  details,
+	}
+}
+
+type FeishuUser struct {
 	UID             int64          `gorm:"column:uid;primarykey;comment:关联users表中的用户id" json:"uid"`
 	User            *User          `gorm:"foreignKey:UID;references:ID" json:"user"`
 	CreatedAt       time.Time      `gorm:"column:created_at" json:"createdAt"`
@@ -26,10 +50,6 @@ type OauthUser struct {
 	TenantKey       string         `gorm:"column:tenant_key;size:255;comment:飞书用户tenant_key" json:"tenant_key"`
 	UnionID         string         `gorm:"column:union_id;size:255;comment:飞书用户union_id" json:"union_id"`
 	UserID          string         `gorm:"column:user_id;size:255;comment:飞书用户ID;index:idx_user_id_status,priority:1" json:"user_id"`
-}
-
-func (receiver *OauthUser) TableName() string {
-	return "oauth_users"
 }
 
 type KeycloakUser struct {
