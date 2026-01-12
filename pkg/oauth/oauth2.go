@@ -65,24 +65,24 @@ func NewOAuth2() (*OAuth2, error) {
 	return &OAuth2{Enable: enable, Providers: providers}, nil
 }
 
-func (f *OAuth2) Redirect(state string, provider string) string {
-	p, ok := f.Providers[provider]
+func (receiver *OAuth2) Redirect(state string, provider string) string {
+	p, ok := receiver.Providers[provider]
 	if !ok {
 		return ""
 	}
 	return p.OAuthConfig.AuthCodeURL(state)
 }
 
-func (f *OAuth2) Auth(ctx context.Context, code, provider string) (*oauth2.Token, error) {
-	p, ok := f.Providers[provider]
+func (receiver *OAuth2) Auth(ctx context.Context, code, provider string) (*oauth2.Token, error) {
+	p, ok := receiver.Providers[provider]
 	if !ok {
 		return nil, fmt.Errorf("provider %s not found", provider)
 	}
 	return p.OAuthConfig.Exchange(ctx, code)
 }
 
-func (f *OAuth2) UserInfo(ctx context.Context, token *oauth2.Token, provider string) (map[string]any, error) {
-	p, ok := f.Providers[provider]
+func (receiver *OAuth2) UserInfo(ctx context.Context, token *oauth2.Token, provider string) (map[string]any, error) {
+	p, ok := receiver.Providers[provider]
 	if !ok {
 		return nil, fmt.Errorf("provider %s not found", provider)
 	}
@@ -102,6 +102,10 @@ func (f *OAuth2) UserInfo(ctx context.Context, token *oauth2.Token, provider str
 		return nil, err
 	}
 
+	return receiver.getUserInfo(body, provider)
+}
+
+func (receiver *OAuth2) getUserInfo(body []byte, provider string) (map[string]any, error) {
 	switch provider {
 	case "keycloak":
 		var kcUser model.KeycloakUser
