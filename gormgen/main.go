@@ -9,7 +9,7 @@ import (
 
 func main() {
 	g := gen.NewGenerator(gen.Config{
-		OutPath: "./stores",
+		OutPath: "./store",
 		Mode:    gen.WithoutContext | gen.WithDefaultQuery | gen.WithQueryInterface,
 	})
 	conf.LoadConfig("./config.yaml")
@@ -19,6 +19,6 @@ func main() {
 	}
 	defer clear()
 	g.UseDB(db)
-	g.ApplyBasic(model.User{}, model.Role{}, model.Api{}, model.CasbinRule{}, model.OauthUser{}, model.Oauth2User{})
+	g.ApplyBasic(model.User{}, model.Role{}, model.Api{}, model.CasbinRule{}, model.Oauth2User{})
 	g.Execute()
 }

@@ -59,10 +59,6 @@ func getService() (*service, func(), error) {
 		return nil, nil, err
 	}
 
-	provider := store.NewDBProvider(db)
-	apiRepo := store.NewApiStore(provider)
-	txManager := store.NewTxManager(db)
-
 	redisClient, err := data.NewRDB()
 	if err != nil {
 		return nil, nil, err
@@ -83,9 +79,9 @@ func getService() (*service, func(), error) {
 	}
 	casbinManager := casbin.NewCasbinManager(casbinEnforcer)
 
-	userServicer := v1.NewUserService(cacheStore, txManager, generateToken, nil, nil)
+	userServicer := v1.NewUserService(cacheStore, generateToken, nil, nil)
 	roleServicer := v1.NewRoleService(casbinManager)
-	apiServicer := v1.NewApiServicer(apiRepo)
+	apiServicer := v1.NewApiServicer()
 	return &service{
 			db:          db,
 			userService: userServicer,

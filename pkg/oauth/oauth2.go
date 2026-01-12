@@ -81,7 +81,7 @@ func (f *OAuth2) Auth(ctx context.Context, code, provider string) (*oauth2.Token
 	return p.OAuthConfig.Exchange(ctx, code)
 }
 
-func (f *OAuth2) UserInfo(ctx context.Context, token *oauth2.Token, provider string) (any, error) {
+func (f *OAuth2) UserInfo(ctx context.Context, token *oauth2.Token, provider string) (map[string]any, error) {
 	p, ok := f.Providers[provider]
 	if !ok {
 		return nil, fmt.Errorf("provider %s not found", provider)
@@ -105,9 +105,10 @@ func (f *OAuth2) UserInfo(ctx context.Context, token *oauth2.Token, provider str
 	switch provider {
 	case "keycloak":
 		var kcUser model.KeycloakUser
-		if err := json.Unmarshal(body, &kcUser); err == nil && kcUser.Sub != "" {
-			return &kcUser, nil
+		if err := json.Unmarshal(body, &kcUser); err != nil {
+			return nil, fmt.Errorf("unmarshal keycloak user failed: %w", err)
 		}
+		return helper.ToMap(&kcUser)
 	case "feishu":
 		var res helper.HttpResponse
 		if err := json.Unmarshal(body, &res); err != nil {
@@ -116,13 +117,11 @@ func (f *OAuth2) UserInfo(ctx context.Context, token *oauth2.Token, provider str
 		if res.Code != 0 {
 			return nil, errors.New(res.Msg)
 		}
-		feishuUser, err := helper.UnmarshalData[model.Oauth2User](res.Data)
-		if err != nil {
+		if _, err := helper.ToMap(res.Data); err != nil {
 			return nil, err
 		}
-		return feishuUser, nil
+		return helper.ToMap(res.Data)
 	default:
 		return nil, fmt.Errorf("provider %s not supported", provider)
 	}
-	return nil, nil
 }

@@ -30,7 +30,7 @@ func NewOauth2User(email, provider string, details datatypes.JSON) *Oauth2User {
 	}
 }
 
-type OauthUser struct {
+type FeishuUser struct {
 	UID             int64          `gorm:"column:uid;primarykey;comment:关联users表中的用户id" json:"uid"`
 	User            *User          `gorm:"foreignKey:UID;references:ID" json:"user"`
 	CreatedAt       time.Time      `gorm:"column:created_at" json:"createdAt"`
@@ -50,10 +50,6 @@ type OauthUser struct {
 	TenantKey       string         `gorm:"column:tenant_key;size:255;comment:飞书用户tenant_key" json:"tenant_key"`
 	UnionID         string         `gorm:"column:union_id;size:255;comment:飞书用户union_id" json:"union_id"`
 	UserID          string         `gorm:"column:user_id;size:255;comment:飞书用户ID;index:idx_user_id_status,priority:1" json:"user_id"`
-}
-
-func (receiver *OauthUser) TableName() string {
-	return "oauth_users"
 }
 
 type KeycloakUser struct {

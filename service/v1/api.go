@@ -10,7 +10,6 @@ import (
 	"github.com/yiran15/api-server/base/log"
 	"github.com/yiran15/api-server/base/types"
 	"github.com/yiran15/api-server/model"
-	"github.com/yiran15/api-server/store"
 	"go.uber.org/zap"
 	"gorm.io/gorm"
 )
@@ -25,7 +24,7 @@ type ApiServicer interface {
 
 type ApiService struct{}
 
-func NewApiServicer(apiStore store.ApiStorer) ApiServicer {
+func NewApiServicer() ApiServicer {
 	return &ApiService{}
 }
 
