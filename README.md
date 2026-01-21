@@ -4,7 +4,7 @@
 
 GO 编写的 WEB 框架，支持用户管理、角色管理、接口权限管理、OAuth2 登录等功能，此框架基于流行的`Gin`框架构建。
 
-前端地址：[https://github.com/yiran15/ui.git](https://github.com/yiran15/ui.git)
+前端地址：[https://github.com/yiran15/ui.git](https://github.com/yiran815/ui)
 
 预览地址：[清泉流响](https://qqlx.net/)
 
